@@ -1,0 +1,9 @@
+{
+  "name": "safebbang",
+  "version": "1.0.0",
+  "description": "안전빵 - 결제 전 후회 막는 AI",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}
