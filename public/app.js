@@ -92,13 +92,48 @@ async function compressImage(file, maxDim = 1568, quality = 0.85) {
 
 // API 호출 헬퍼
 async function callAPI(endpoint, body) {
-  const res = await fetch(`/api/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `오류 ${res.status}`);
+  let res;
+  try {
+    res = await fetch(`/api/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    throw new Error('네트워크 오류. 인터넷 연결 확인.');
+  }
+  
+  // 응답을 텍스트로 먼저 받기 (JSON이 아닐 수도 있어서)
+  const text = await res.text();
+  
+  // 빈 응답 처리
+  if (!text || text.trim() === '') {
+    throw new Error(`서버 응답 없음 (${res.status}). 함수 타임아웃 가능성. 다시 시도해주세요.`);
+  }
+  
+  // JSON 파싱 시도
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    // JSON이 아닌 응답 = Vercel 에러 페이지 등
+    console.error('JSON 파싱 실패:', text.substring(0, 200));
+    if (text.includes('FUNCTION_INVOCATION_TIMEOUT') || text.includes('timeout')) {
+      throw new Error('분석이 너무 오래 걸렸어요 (60초 초과). 다시 시도하거나 다른 장소로 시도해주세요.');
+    }
+    if (text.includes('FUNCTION_INVOCATION_FAILED')) {
+      throw new Error('서버 함수 실행 실패. Vercel 로그 확인 필요.');
+    }
+    if (text.includes('NOT_FOUND') || res.status === 404) {
+      throw new Error('API 경로를 찾을 수 없습니다. 배포 확인 필요.');
+    }
+    throw new Error(`서버 응답 오류 (${res.status}): ${text.substring(0, 100)}`);
+  }
+  
+  if (!res.ok) {
+    throw new Error(data.error || `오류 ${res.status}`);
+  }
+  
   return data;
 }
 
@@ -245,11 +280,13 @@ function App() {
     setView('home'); setResult(null); setUrl(''); setUploadedImages([]); setError('');
   };
 
+  // 점수 기반 라벨 (AI 응답 무시하고 점수로만 결정 - 일관성 보장)
   const getScoreStyle = (s) => {
-    if (s >= 70) return { color: C.green, bg: C.greenBg, label: '안전' };
-    if (s >= 50) return { color: C.yellow, bg: C.yellowBg, label: '주의' };
-    if (s >= 30) return { color: C.orange, bg: C.orangeBg, label: '주의' };
-    return { color: C.red, bg: C.redBg, label: '위험' };
+    if (s >= 75) return { color: C.green, bg: C.greenBg, label: '안전', emoji: '🟢', shortMsg: '안심하고 가도 됨' };
+    if (s >= 55) return { color: '#7a8a17', bg: '#eef0d5', label: '대체로 안전', emoji: '🟡', shortMsg: '큰 위험 없음' };
+    if (s >= 40) return { color: C.yellow, bg: C.yellowBg, label: '주의', emoji: '🟠', shortMsg: '신중히 결정 필요' };
+    if (s >= 25) return { color: C.orange, bg: C.orangeBg, label: '위험', emoji: '🔴', shortMsg: '후회 가능성 큼' };
+    return { color: C.red, bg: C.redBg, label: '매우 위험', emoji: '⛔', shortMsg: '예약 비추천' };
   };
 
   const sevStyle = (s) => {
@@ -418,15 +455,49 @@ function HomeView({ setView, savedCount }) {
 
 function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
   const site = url ? detectSite(url) : null;
+  
+  // URL 형식 체크
+  const isSearchUrl = url && (url.includes('/p/search/') || url.includes('?query='));
+  const isShortUrl = url && (url.includes('naver.me/') || url.includes('me2.do/'));
+  const isLikelyPlaceUrl = url && (
+    url.includes('pcmap.place.naver.com') || 
+    url.includes('m.place.naver.com') || 
+    url.includes('/entry/place/') ||
+    url.includes('/entry/restaurant/') ||
+    isShortUrl
+  );
 
   return (
     <div style={{ padding: '24px 0 0' }}>
       <h2 style={{ fontSize: 24, fontWeight: 700, color: C.text, margin: '0 0 6px', letterSpacing: '-0.02em' }}>
         네이버 플레이스 링크
       </h2>
-      <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 20px', lineHeight: 1.6 }}>
+      <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 16px', lineHeight: 1.6 }}>
         식당·카페·병원·미용실 등 네이버에 등록된 모든 장소를 분석합니다.
       </p>
+
+      {/* 올바른 URL 가져오는 방법 안내 */}
+      <details style={{ marginBottom: 16, padding: '12px 14px', background: C.bgSubtle, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
+        <summary style={{ fontWeight: 600, color: C.text, listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+          ℹ️ 어떤 링크를 복사해야 하나요?
+          <ChevronDown size={12} style={{ marginLeft: 'auto' }} />
+        </summary>
+        <div style={{ marginTop: 10, color: C.textMid, lineHeight: 1.7 }}>
+          <strong style={{ color: C.text }}>✅ 올바른 방법</strong><br />
+          1. 네이버 지도 앱/웹에서 식당 검색<br />
+          2. <strong>식당을 클릭해서 상세 페이지로 진입</strong><br />
+          3. 상단 <strong>공유 버튼</strong> → URL 복사<br />
+          <br />
+          <strong style={{ color: C.red }}>❌ 잘못된 예시</strong><br />
+          • 검색 결과 페이지 (<code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>map.naver.com/p/search/...</code>)<br />
+          • 지도 화면 자체<br />
+          <br />
+          <strong style={{ color: C.green }}>✓ 올바른 예시</strong><br />
+          • <code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>pcmap.place.naver.com/restaurant/123/...</code><br />
+          • <code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>naver.me/xxxxx</code> (단축 URL)<br />
+          • <code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>map.naver.com/p/entry/place/123</code>
+        </div>
+      </details>
 
       <textarea
         value={url}
@@ -437,10 +508,21 @@ function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
         style={{ width: '100%', padding: '14px', border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: C.bgSubtle, color: C.text, resize: 'none', lineHeight: 1.5, marginBottom: 12 }}
       />
 
-      {site && (
+      {/* 검색 페이지 URL 감지 시 즉시 경고 */}
+      {url && isSearchUrl && (
+        <div style={{ display: 'flex', gap: 8, padding: '12px 14px', background: C.redBg, color: C.red, borderRadius: 8, fontSize: 12, marginBottom: 12, fontWeight: 500, lineHeight: 1.5 }}>
+          <AlertCircle size={14} />
+          <div>
+            <strong>검색 결과 페이지예요</strong><br />
+            식당을 클릭해서 들어간 상세 페이지에서 공유 → URL 복사 해주세요.
+          </div>
+        </div>
+      )}
+
+      {site && !isSearchUrl && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: site.supported ? C.greenBg : C.orangeBg, color: site.supported ? C.green : C.orange, borderRadius: 8, fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
           {site.supported ? <Check size={14} /> : <AlertCircle size={14} />}
-          <span>{site.emoji} {site.name} 감지됨</span>
+          <span>{site.emoji} {site.name} 감지됨 {isShortUrl && '(단축 URL · 자동 펼침)'}</span>
         </div>
       )}
 
@@ -451,18 +533,22 @@ function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
       )}
 
       {error && (
-        <div style={{ display: 'flex', gap: 8, padding: '10px 14px', background: C.redBg, color: C.red, borderRadius: 6, fontSize: 12, marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 8, padding: '10px 14px', background: C.redBg, color: C.red, borderRadius: 6, fontSize: 12, marginBottom: 14, lineHeight: 1.5 }}>
           <AlertCircle size={14} />
           <div>{error}</div>
         </div>
       )}
 
-      <button onClick={analyzeUrl} disabled={!url.trim() || (site && !site.supported)} style={{ width: '100%', padding: '15px 16px', background: (url.trim() && site?.supported) ? C.text : C.border, color: (url.trim() && site?.supported) ? C.bg : C.textLight, border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+      <button 
+        onClick={analyzeUrl} 
+        disabled={!url.trim() || (site && !site.supported) || isSearchUrl} 
+        style={{ width: '100%', padding: '15px 16px', background: (url.trim() && site?.supported && !isSearchUrl) ? C.text : C.border, color: (url.trim() && site?.supported && !isSearchUrl) ? C.bg : C.textLight, border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+      >
         <Sparkles size={16} /> 손해 위험 분석 시작
       </button>
 
       <p style={{ fontSize: 11, color: C.textLight, marginTop: 12, textAlign: 'center', lineHeight: 1.5 }}>
-        리뷰 80개 수집 + AI 분석 · 약 30~60초
+        리뷰 60개 수집 + AI 분석 · 약 30~50초
       </p>
     </div>
   );
@@ -652,13 +738,44 @@ function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHo
         {isSaved ? '담은 장소' : '안전빵에 담아 비교하기'}
       </button>
 
-      <div style={{ padding: '18px 20px', background: sc.bg, borderRadius: 10, marginBottom: 20, borderLeft: `3px solid ${sc.color}` }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 32, fontWeight: 800, color: sc.color, letterSpacing: '-0.025em', lineHeight: 1 }}>{result.safetyScore}</span>
-          <span style={{ fontSize: 14, color: sc.color, fontWeight: 600 }}>/ 100</span>
-          <span style={{ padding: '2px 8px', background: sc.color, color: '#fff', borderRadius: 3, fontSize: 11, fontWeight: 700, marginLeft: 'auto' }}>{result.scoreLabel}</span>
+      {/* 메인 점수 카드 - 더 직관적으로 */}
+      <div style={{ padding: '20px 22px', background: sc.bg, borderRadius: 12, marginBottom: 20, borderLeft: `4px solid ${sc.color}` }}>
+        {/* 상단: 이모지 + 라벨 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+          <span style={{ fontSize: 24 }}>{sc.emoji}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: sc.color, letterSpacing: '-0.01em' }}>{sc.label}</span>
+          <span style={{ fontSize: 12, color: C.textMid, marginLeft: 'auto' }}>{sc.shortMsg}</span>
         </div>
-        <div style={{ fontSize: 14, color: C.text, fontWeight: 500, lineHeight: 1.55 }}>{result.oneLineSummary}</div>
+        
+        {/* 점수 게이지 */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 36, fontWeight: 800, color: sc.color, letterSpacing: '-0.03em', lineHeight: 1 }}>{result.safetyScore}</span>
+            <span style={{ fontSize: 14, color: C.textMid, fontWeight: 600 }}>/ 100</span>
+            <span style={{ fontSize: 11, color: C.textLight, marginLeft: 'auto' }}>안전 점수 (100이 가장 안전)</span>
+          </div>
+          {/* 시각적 게이지 바 */}
+          <div style={{ width: '100%', height: 8, background: '#ffffff', borderRadius: 4, overflow: 'hidden', position: 'relative', border: `1px solid ${C.border}` }}>
+            {/* 그라데이션 배경 (위험 → 안전) */}
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to right, #fdecec 0%, #fbf0e1 25%, #fbf3db 50%, #eef0d5 75%, #ddedea 100%)', opacity: 0.4 }} />
+            {/* 실제 점수 채우기 */}
+            <div style={{ width: `${result.safetyScore}%`, height: '100%', background: sc.color, transition: 'width 0.6s ease', position: 'relative', zIndex: 1 }} />
+            {/* 점수 위치 마커 */}
+            <div style={{ position: 'absolute', left: `calc(${result.safetyScore}% - 2px)`, top: -3, width: 4, height: 14, background: sc.color, borderRadius: 2, zIndex: 2 }} />
+          </div>
+          {/* 기준선 라벨 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 9, color: C.textLight, fontWeight: 500 }}>
+            <span>🔴 위험</span>
+            <span>🟠 주의</span>
+            <span>🟡 보통</span>
+            <span>🟢 안전</span>
+          </div>
+        </div>
+
+        {/* 한 줄 요약 */}
+        <div style={{ fontSize: 14, color: C.text, fontWeight: 500, lineHeight: 1.55, padding: '12px 14px', background: 'rgba(255,255,255,0.6)', borderRadius: 6 }}>
+          {result.oneLineSummary}
+        </div>
       </div>
 
       {result.recentSignal && result.recentSignal !== '특이 신호 없음' && (
@@ -675,6 +792,11 @@ function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHo
       {result.aspectScores?.length > 0 && <AspectScores aspects={result.aspectScores} />}
       <ProsConsLayout topRisks={result.topRisks} topPositives={result.topPositives} sevStyle={sevStyle} />
       <PersonalScenario result={result} />
+
+      {/* 블로그 리뷰 깊은 분석 (옵션 C: 사용자 선택) */}
+      {result.sourceUrl && result.placeId && (
+        <BlogAnalysisSection placeId={result.placeId} />
+      )}
 
       {result.avoidIf?.length > 0 && (
         <div style={{ marginBottom: 24 }}>
@@ -843,6 +965,268 @@ function ExpandableItem({ item, type, sevStyle, isLast }) {
               <div style={{ fontSize: 12, color: C.text, lineHeight: 1.55 }}>"{rev.text}"</div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BlogAnalysisSection({ placeId }) {
+  const [state, setState] = useState('idle'); // idle | loading | loaded | error | empty
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+
+  const analyze = async () => {
+    setState('loading');
+    setError('');
+    try {
+      const res = await callAPI('analyze-blog', { placeId });
+      if (res.noBlogReviews) {
+        setState('empty');
+        setData(res);
+      } else {
+        setData(res);
+        setState('loaded');
+      }
+    } catch (e) {
+      setError(e.message);
+      setState('error');
+    }
+  };
+
+  // 시작 전: 유도 버튼
+  if (state === 'idle') {
+    return (
+      <div style={{ 
+        marginBottom: 24, 
+        padding: 18, 
+        background: 'linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%)', 
+        borderRadius: 12, 
+        border: '1px solid #d4dbff' 
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 8, background: '#5b6ee1', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
+            <Sparkles size={18} fill="#fff" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: '0 0 4px', letterSpacing: '-0.015em' }}>
+              블로그 리뷰까지 깊게 분석
+            </h3>
+            <p style={{ fontSize: 12, color: C.textMid, margin: 0, lineHeight: 1.6 }}>
+              네이버 블로그 후기 40개에서 <strong style={{ color: C.text }}>광고 자동 필터링</strong> →<br />
+              진짜 후기만 추출해 더 깊은 위험·장점 발견
+            </p>
+          </div>
+        </div>
+
+        <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.7 }}>
+            <strong style={{ color: C.text }}>왜 필요한가요?</strong><br />
+            방문자 리뷰는 짧고 표면적이에요. 블로그는 자세하지만 광고가 60~80%.<br />
+            AI가 협찬·체험단·정형화된 칭찬 패턴을 가려내고 진짜 후기에서만 인사이트를 뽑아냅니다.
+          </div>
+        </div>
+
+        <button 
+          onClick={analyze}
+          style={{ 
+            width: '100%', padding: '12px 14px', 
+            background: '#5b6ee1', color: '#fff', 
+            border: 'none', borderRadius: 8, 
+            fontSize: 13, fontWeight: 600, 
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+          }}
+        >
+          <Sparkles size={13} fill="#fff" /> 블로그 리뷰 분석 시작 (약 30~60초 추가)
+        </button>
+      </div>
+    );
+  }
+
+  // 로딩 중
+  if (state === 'loading') {
+    return (
+      <div style={{ marginBottom: 24, padding: 24, background: '#f0f4ff', borderRadius: 12, border: '1px solid #d4dbff', textAlign: 'center' }}>
+        <div style={{ marginBottom: 16 }}>
+          <Spinner size={28} />
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 6 }}>
+          블로그 리뷰 수집 + 광고 필터링 중
+        </div>
+        <div style={{ fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
+          1. Apify가 블로그 글 40개 수집<br />
+          2. AI가 광고/진짜 후기 판별<br />
+          3. 진짜 후기에서 깊은 신호 추출
+        </div>
+      </div>
+    );
+  }
+
+  // 에러
+  if (state === 'error') {
+    return (
+      <div style={{ marginBottom: 24, padding: 16, background: C.redBg, borderRadius: 10, border: `1px solid ${C.red}` }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+          <AlertCircle size={16} color={C.red} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.red, marginBottom: 4 }}>블로그 분석 실패</div>
+            <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{error}</div>
+          </div>
+        </div>
+        <button onClick={analyze} style={{ padding: '6px 12px', background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+          다시 시도
+        </button>
+      </div>
+    );
+  }
+
+  // 블로그 리뷰 없음
+  if (state === 'empty') {
+    return (
+      <div style={{ marginBottom: 24, padding: 16, background: C.bgSubtle, borderRadius: 10, border: `1px solid ${C.border}`, textAlign: 'center' }}>
+        <div style={{ fontSize: 24, marginBottom: 8 }}>📭</div>
+        <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 4 }}>블로그 리뷰가 거의 없어요</div>
+        <div style={{ fontSize: 11, color: C.textMid }}>{data?.message || '방문자 리뷰 분석만으로 충분합니다.'}</div>
+      </div>
+    );
+  }
+
+  // 로드 완료 - 결과 표시
+  const adRatioColor = data.adRatio >= 70 ? C.red : data.adRatio >= 50 ? C.orange : data.adRatio >= 30 ? C.yellow : C.green;
+  const trustColor = data.trustScore >= 70 ? C.green : data.trustScore >= 50 ? C.yellow : data.trustScore >= 30 ? C.orange : C.red;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <h3 style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: '0 0 4px', letterSpacing: '-0.015em', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <Sparkles size={15} color="#5b6ee1" fill="#5b6ee1" />
+        블로그 리뷰 깊은 분석
+      </h3>
+      <p style={{ fontSize: 11, color: C.textLight, margin: '0 0 12px' }}>광고 필터링 후 진짜 후기에서 추출한 인사이트</p>
+
+      {/* 광고 비율 + 신뢰도 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+        <div style={{ padding: '12px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.textMid, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>광고 비율</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: adRatioColor, letterSpacing: '-0.02em' }}>{data.adRatio}</span>
+            <span style={{ fontSize: 11, color: C.textLight }}>%</span>
+          </div>
+          <div style={{ fontSize: 10, color: C.textMid, marginTop: 2 }}>{data.adReviews}/{data.totalReviews}개 광고로 판단</div>
+        </div>
+        <div style={{ padding: '12px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.textMid, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>신뢰도</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, color: trustColor, letterSpacing: '-0.02em' }}>{data.trustScore}</span>
+            <span style={{ fontSize: 11, color: C.textLight }}>/100</span>
+          </div>
+          <div style={{ fontSize: 10, color: C.textMid, marginTop: 2 }}>블로그 후기 신뢰성</div>
+        </div>
+      </div>
+
+      {/* 핵심 요약 */}
+      {data.summary && (
+        <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%)', borderRadius: 10, marginBottom: 14, borderLeft: '3px solid #5b6ee1' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#5b6ee1', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>핵심 발견</div>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 500, lineHeight: 1.55 }}>{data.summary}</div>
+        </div>
+      )}
+
+      {/* 시간 트렌드 */}
+      {data.timeTrend && (
+        <div style={{ marginBottom: 14, border: `1px solid ${C.border}`, borderRadius: 10, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', background: C.bgSubtle, borderBottom: `1px solid ${C.border}`, fontSize: 12, fontWeight: 700, color: C.text }}>📈 시간 흐름</div>
+          {data.timeTrend.improving && data.timeTrend.improving !== '특별한 개선 신호 없음' && (
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 8, background: C.bg }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.green, minWidth: 36 }}>↑ 개선</span>
+              <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{data.timeTrend.improving}</span>
+            </div>
+          )}
+          {data.timeTrend.worsening && data.timeTrend.worsening !== '특별한 악화 신호 없음' && (
+            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${C.border}`, display: 'flex', gap: 8, background: C.bg }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.red, minWidth: 36 }}>↓ 악화</span>
+              <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{data.timeTrend.worsening}</span>
+            </div>
+          )}
+          {data.timeTrend.stable && (
+            <div style={{ padding: '10px 14px', display: 'flex', gap: 8, background: C.bg }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.textMid, minWidth: 36 }}>→ 유지</span>
+              <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>{data.timeTrend.stable}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 놓쳤을 위험 신호 */}
+      {data.warnings?.length > 0 && (
+        <div style={{ marginBottom: 14, padding: '14px 16px', background: C.redBg, borderRadius: 10, border: `1px solid ${C.red}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.red, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            ⚠ 방문자 리뷰만 봤다면 놓쳤을 위험
+          </div>
+          {data.warnings.map((w, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 12, color: C.text, lineHeight: 1.55 }}>
+              <span style={{ color: C.red, fontWeight: 700 }}>•</span>
+              <span>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 진짜 후기들이 칭찬하는 점 */}
+      {data.hiddenStrengths?.length > 0 && (
+        <div style={{ marginBottom: 14, padding: '14px 16px', background: C.greenBg, borderRadius: 10, border: `1px solid ${C.green}` }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.green, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            ✓ 진짜 후기들이 공통으로 칭찬
+          </div>
+          {data.hiddenStrengths.map((s, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', fontSize: 12, color: C.text, lineHeight: 1.55 }}>
+              <span style={{ color: C.green, fontWeight: 700 }}>•</span>
+              <span>{s}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 심층 인사이트 */}
+      {data.deepInsights?.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>💡 심층 인사이트</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.deepInsights.map((insight, i) => {
+              const senColor = insight.sentiment === 'positive' ? C.green : insight.sentiment === 'negative' ? C.red : C.textMid;
+              const senBg = insight.sentiment === 'positive' ? C.greenBg : insight.sentiment === 'negative' ? C.redBg : C.bgSubtle;
+              return (
+                <div key={i} style={{ padding: '11px 13px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, borderLeft: `3px solid ${senColor}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, color: senColor, background: senBg, padding: '2px 6px', borderRadius: 3, textTransform: 'uppercase' }}>{insight.category}</span>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>{insight.title}</span>
+                  </div>
+                  <div style={{ fontSize: 11.5, color: C.textMid, lineHeight: 1.5 }}>{insight.detail}</div>
+                  {insight.fromReviews && <div style={{ fontSize: 10, color: C.textLight, marginTop: 4 }}>{insight.fromReviews}개 후기에서 발견</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 광고 vs 진짜 예시 */}
+      {data.evidenceQuotes?.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>📋 광고 vs 진짜 후기 예시</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {data.evidenceQuotes.map((q, i) => (
+              <div key={i} style={{ padding: '10px 12px', background: q.type === 'ad' ? '#fff4e6' : C.greenBg, borderRadius: 6, border: `1px solid ${q.type === 'ad' ? '#ffd9a8' : '#c5dfd6'}` }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: q.type === 'ad' ? C.orange : C.green, padding: '1px 6px', background: q.type === 'ad' ? '#fff' : '#fff', borderRadius: 3, textTransform: 'uppercase' }}>
+                    {q.type === 'ad' ? '🚫 광고로 판단' : '✓ 진짜 후기'}
+                  </span>
+                  <span style={{ fontSize: 10, color: C.textMid }}>{q.reason}</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.text, lineHeight: 1.55, fontStyle: 'italic' }}>"{q.text}"</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
