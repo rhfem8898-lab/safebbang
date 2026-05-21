@@ -1,14 +1,37 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
+// 토스 스타일 디자인 시스템
 const C = {
-  bg: '#ffffff', bgSubtle: '#f7f6f3', bgHover: '#f1f1ef',
-  border: '#e9e9e7', borderStrong: '#d3d2cf',
-  text: '#37352f', textMid: '#787774', textLight: '#9b9a97',
-  red: '#e03e3e', redBg: '#fdecec',
-  orange: '#d9730d', orangeBg: '#fbf0e1',
-  yellow: '#dfab01', yellowBg: '#fbf3db',
-  green: '#0f7b0f', greenBg: '#ddedea',
-  blue: '#2383e2',
+  // 배경
+  bg: '#ffffff', 
+  bgSubtle: '#f2f4f6',   // 토스 카드 배경
+  bgHover: '#e5e8eb',
+  
+  // 경계선
+  border: '#e5e8eb', 
+  borderStrong: '#d1d6db',
+  
+  // 텍스트
+  text: '#191f28',       // 토스 검정
+  textMid: '#4e5968',    // 토스 중간 회색
+  textLight: '#8b95a1',  // 토스 옅은 회색
+  
+  // 상태 컬러
+  blue: '#3182f6',       // 토스 시그니처 블루
+  blueBg: '#e8f3ff',
+  blueDark: '#1b64da',
+  
+  red: '#f04452', 
+  redBg: '#fde8eb',
+  
+  orange: '#f59e0b', 
+  orangeBg: '#fef3c7',
+  
+  yellow: '#facc15', 
+  yellowBg: '#fef9c3',
+  
+  green: '#22c55e', 
+  greenBg: '#dcfce7',
 };
 
 // SVG 아이콘 컴포넌트들 (lucide 대신)
@@ -64,6 +87,58 @@ function detectSite(url) {
 }
 
 const isValidUrl = (str) => { try { new URL(str); return true; } catch (e) { return false; } };
+
+// 텍스트 덩어리에서 네이버 URL 추출
+// 예: "[네이버지도]\n식당명\n주소\nhttps://naver.me/xxx" → "https://naver.me/xxx"
+function extractNaverUrl(text) {
+  if (!text) return null;
+  
+  // 1. 그대로 유효한 URL이면 반환
+  const trimmed = text.trim();
+  if (isValidUrl(trimmed)) return trimmed;
+  
+  // 2. 텍스트에서 URL 패턴 추출 (네이버 우선)
+  // 정규식: http(s)://로 시작하는 모든 URL
+  const urlPattern = /(https?:\/\/[^\s"'<>)\]]+)/g;
+  const matches = text.match(urlPattern);
+  
+  if (!matches || matches.length === 0) return null;
+  
+  // 3. 네이버 도메인 URL 우선 선택
+  const naverPatterns = ['naver.me', 'naver.com', 'me2.do'];
+  for (const pattern of naverPatterns) {
+    const found = matches.find(url => url.includes(pattern));
+    if (found) {
+      // URL 끝의 구두점 제거 (예: "url." → "url")
+      return found.replace(/[.,;:!?)\]\}>]+$/, '');
+    }
+  }
+  
+  // 4. 네이버 URL 없으면 첫 번째 URL 반환
+  return matches[0].replace(/[.,;:!?)\]\}>]+$/, '');
+}
+
+// 텍스트에서 장소 이름 추출 (선택적 - 자동 입력용)
+function extractPlaceName(text) {
+  if (!text) return null;
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  
+  // [네이버지도] 다음 줄이 보통 장소명
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (lines[i].includes('[네이버지도]') || lines[i].includes('[네이버 지도]')) {
+      return lines[i + 1] || null;
+    }
+  }
+  
+  // [네이버지도] 없으면 첫 줄 (URL 아닌 줄)
+  for (const line of lines) {
+    if (!line.startsWith('http') && !line.includes('://') && line.length < 50) {
+      return line;
+    }
+  }
+  return null;
+}
+
 const isMobile = () => typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 async function compressImage(file, maxDim = 1568, quality = 0.85) {
@@ -149,6 +224,9 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [mobile, setMobile] = useState(false);
+  const [clipboardHint, setClipboardHint] = useState(null);
+  const [installPrompt, setInstallPrompt] = useState(null);  // PWA 설치 프롬프트
+  const [isInstalled, setIsInstalled] = useState(false);
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
@@ -158,21 +236,175 @@ function App() {
       const stored = localStorage.getItem('safebbang_saved');
       if (stored) setSavedPlaces(JSON.parse(stored));
     } catch (e) {}
+    
+    // PWA 설치 가능 여부 체크
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    setIsInstalled(isStandalone);
+    
+    // PWA 설치 프롬프트 이벤트 캡처 (안드로이드 Chrome)
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    
+    // 설치 완료 이벤트
+    const handleInstalled = () => {
+      setInstallPrompt(null);
+      setIsInstalled(true);
+    };
+    window.addEventListener('appinstalled', handleInstalled);
+    
+    // 1. URL 쿼리에서 공유받은 데이터 처리 (PWA Share Target)
     const params = new URLSearchParams(window.location.search);
-    const sharedUrl = params.get('url') || params.get('text');
-    if (sharedUrl && isValidUrl(sharedUrl)) {
-      setUrl(sharedUrl);
+    const sharedText = params.get('text') || '';
+    const sharedUrl = params.get('url') || '';
+    const sharedTitle = params.get('title') || '';
+    const combined = [sharedTitle, sharedText, sharedUrl].filter(Boolean).join('\n');
+    
+    if (combined) {
+      const found = extractNaverUrl(combined);
+      if (found) {
+        window.history.replaceState({}, '', '/');
+        setUrl(combined);
+        setView('analyzing');
+        autoAnalyze(combined);
+        return () => {
+          window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+          window.removeEventListener('appinstalled', handleInstalled);
+        };
+      }
+    }
+    
+    checkClipboardForUrl();
+    
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  // PWA 설치 실행
+  const installPWA = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const result = await installPrompt.userChoice;
+    if (result.outcome === 'accepted') {
+      setInstallPrompt(null);
+      setIsInstalled(true);
+    }
+  };
+
+  // 클립보드에 네이버 URL 있는지 확인
+  const checkClipboardForUrl = async () => {
+    try {
+      // navigator.clipboard.readText()는 페이지가 포커스 받아야 작동
+      // 일부 브라우저는 사용자 인터랙션 필요
+      if (!navigator.clipboard?.readText) return;
+      
+      // 페이지 로드 직후엔 권한 부족할 수 있으니 약간 지연
+      await new Promise(r => setTimeout(r, 500));
+      
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      
+      const found = extractNaverUrl(text);
+      if (found) {
+        // 이미 분석된 URL인지 체크 (중복 방지)
+        const recentlyAnalyzed = localStorage.getItem('safebbang_last_url');
+        if (recentlyAnalyzed === found) return;
+        
+        // 클립보드 추천 표시
+        setClipboardHint({ text, extractedUrl: found, placeName: extractPlaceName(text) });
+      }
+    } catch (e) {
+      // 권한 거부 또는 미지원 - 조용히 무시
+    }
+  };
+
+  // 자동 분석 (공유 시트나 클립보드 수락 시)
+  const autoAnalyze = async (textOrUrl) => {
+    const extractedUrl = extractNaverUrl(textOrUrl);
+    if (!extractedUrl) {
+      setView('link-input');
+      setError('URL을 찾지 못했어요.');
+      return;
+    }
+    
+    const site = detectSite(extractedUrl);
+    if (!site || site.id !== 'naver') {
+      setView('link-input');
+      setError('네이버 URL만 지원합니다.');
+      return;
+    }
+    
+    setError('');
+    setAnalyzeProgress(10);
+    setAnalyzeStage('공유받은 링크 처리 중');
+    
+    try {
+      const stages = [
+        { msg: '네이버 플레이스 접근 중', pct: 20 },
+        { msg: '리뷰 수집 중 (약 30초)', pct: 40 },
+        { msg: 'AI가 위험 신호 분석 중', pct: 70 },
+        { msg: '결과 정리 중', pct: 90 }
+      ];
+      let stageIdx = 0;
+      const interval = setInterval(() => {
+        if (stageIdx < stages.length) {
+          setAnalyzeStage(stages[stageIdx].msg);
+          setAnalyzeProgress(stages[stageIdx].pct);
+          stageIdx++;
+        }
+      }, 6000);
+      
+      const data = await callAPI('analyze-naver', { url: extractedUrl });
+      clearInterval(interval);
+      setAnalyzeProgress(100);
+      
+      // 분석 성공 시 last_url 저장 (중복 분석 방지)
+      try { localStorage.setItem('safebbang_last_url', extractedUrl); } catch (e) {}
+      
+      await new Promise(r => setTimeout(r, 200));
+      setResult(data);
+      setView('result');
+      window.scrollTo(0, 0);
+    } catch (e) {
+      console.error(e);
+      setError(`분석 실패: ${e.message}`);
       setView('link-input');
     }
-  }, []);
+  };
+
+  // 클립보드 추천 수락
+  const acceptClipboard = () => {
+    if (!clipboardHint) return;
+    setUrl(clipboardHint.text);
+    setClipboardHint(null);
+    setView('analyzing');
+    autoAnalyze(clipboardHint.text);
+  };
+
+  const dismissClipboard = () => setClipboardHint(null);
 
   const saveSavedList = (places) => {
     try { localStorage.setItem('safebbang_saved', JSON.stringify(places)); } catch (e) {}
   };
 
   const analyzeUrl = async () => {
-    if (!isValidUrl(url)) { setError('올바른 URL을 입력해주세요.'); return; }
-    const site = detectSite(url);
+    // 텍스트에서 URL 자동 추출
+    const extractedUrl = extractNaverUrl(url);
+    if (!extractedUrl) {
+      setError('네이버 URL을 찾지 못했어요. 네이버 지도에서 공유한 링크를 붙여넣어주세요.');
+      return;
+    }
+    
+    if (!isValidUrl(extractedUrl)) { 
+      setError('올바른 URL이 아니에요.'); 
+      return; 
+    }
+    
+    const site = detectSite(extractedUrl);
     if (!site) { setError('지원하지 않는 URL입니다.'); return; }
     if (site.id !== 'naver') {
       setError(`${site.name}는 현재 직접 분석을 지원하지 않아요. 아래 이미지 업로드를 이용해주세요.`);
@@ -198,7 +430,7 @@ function App() {
         }
       }, 6000);
 
-      const data = await callAPI('analyze-naver', { url });
+      const data = await callAPI('analyze-naver', { url: extractedUrl });
       clearInterval(interval);
       setAnalyzeProgress(100);
       await new Promise(r => setTimeout(r, 200));
@@ -300,7 +532,7 @@ function App() {
       <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh' }}>
         <Header view={view} goHome={goHome} savedCount={savedPlaces.length} setView={setView} />
         <div style={{ padding: '0 16px 100px' }}>
-          {view === 'home' && <HomeView setView={setView} savedCount={savedPlaces.length} />}
+          {view === 'home' && <HomeView setView={setView} savedCount={savedPlaces.length} clipboardHint={clipboardHint} acceptClipboard={acceptClipboard} dismissClipboard={dismissClipboard} checkClipboardForUrl={checkClipboardForUrl} installPrompt={installPrompt} installPWA={installPWA} isInstalled={isInstalled} />}
           {view === 'link-input' && <LinkInputView url={url} setUrl={setUrl} error={error} setError={setError} analyzeUrl={analyzeUrl} setView={setView} />}
           {view === 'image-input' && <ImageInputView mobile={mobile} uploadedImages={uploadedImages} processing={processing} dragActive={dragActive} setDragActive={setDragActive} error={error} galleryInputRef={galleryInputRef} cameraInputRef={cameraInputRef} handleFiles={handleFiles} removeImage={removeImage} analyzeImages={analyzeImages} />}
           {view === 'analyzing' && <AnalyzingView stage={analyzeStage} progress={analyzeProgress} />}
@@ -315,15 +547,37 @@ function App() {
 
 function Header({ view, goHome, savedCount, setView }) {
   return (
-    <div style={{ position: 'sticky', top: 0, zIndex: 50, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)', borderBottom: `1px solid ${C.border}`, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ 
+      position: 'sticky', 
+      top: 0, 
+      zIndex: 50, 
+      background: '#fff', 
+      borderBottom: `1px solid ${C.border}`, 
+      padding: '12px 16px', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'space-between' 
+    }}>
       <div onClick={goHome} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-        <img src="/logo/bread-64.png" alt="안전빵" style={{ width: 36, height: 36, display: 'block' }} />
-        <span style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-0.02em' }}>안전빵</span>
+        <img src="/logo/bread-64.png" alt="안전빵" style={{ width: 32, height: 32, display: 'block' }} />
+        <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em', color: C.text }}>안전빵</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {savedCount > 0 && (
-          <button onClick={() => setView('saved')} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 11px', background: C.text, color: C.bg, border: 'none', borderRadius: 100, fontSize: 12, fontWeight: 600 }}>
-            <Bookmark size={12} fill="currentColor" /><span>{savedCount}</span>
+          <button onClick={() => setView('saved')} style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 6, 
+            padding: '8px 14px', 
+            background: C.blueBg, 
+            color: C.blue, 
+            border: 'none', 
+            borderRadius: 100, 
+            fontSize: 13, 
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}>
+            <Bookmark size={13} fill="currentColor" /><span>{savedCount}</span>
           </button>
         )}
       </div>
@@ -331,7 +585,7 @@ function Header({ view, goHome, savedCount, setView }) {
   );
 }
 
-function HomeView({ setView, savedCount }) {
+function HomeView({ setView, savedCount, clipboardHint, acceptClipboard, dismissClipboard, checkClipboardForUrl, installPrompt, installPWA, isInstalled }) {
   return (
     <div style={{ padding: '24px 0 0' }}>
       {/* 메인 비주얼: 떠있는 빵 */}
@@ -372,100 +626,470 @@ function HomeView({ setView, savedCount }) {
         `}</style>
       </div>
 
-      <h1 style={{ fontSize: 30, fontWeight: 700, color: C.text, margin: '0 0 10px', letterSpacing: '-0.025em', lineHeight: 1.2, textAlign: 'center' }}>
-        결제 전, <span style={{ color: C.red }}>후회</span>부터 막으세요
+      <h1 style={{ 
+        fontSize: 26, 
+        fontWeight: 700, 
+        color: C.text, 
+        margin: '0 0 8px', 
+        letterSpacing: '-0.03em', 
+        lineHeight: 1.35, 
+        textAlign: 'center' 
+      }}>
+        결제 전 <span style={{ color: C.red }}>후회</span>,<br />
+        안전빵이 대신 막아드릴게요
       </h1>
-      <p style={{ fontSize: 14, color: C.textMid, margin: '0 0 32px', lineHeight: 1.6, textAlign: 'center' }}>
-        식당·카페·병원·미용실, 숙소까지<br />
-        AI가 리뷰 100개 읽고 위험 신호 진단
+      <p style={{ 
+        fontSize: 14, 
+        color: C.textMid, 
+        margin: '0 0 28px', 
+        lineHeight: 1.55, 
+        textAlign: 'center',
+        fontWeight: 500
+      }}>
+        리뷰 100개 안 읽어도 돼요.<br />
+        AI가 30초 만에 위험 신호를 찾아드려요
       </p>
 
-      <button onClick={() => setView('link-input')} style={{ width: '100%', padding: '20px', background: C.text, color: C.bg, border: 'none', borderRadius: 12, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
-        <div style={{ width: 44, height: 44, borderRadius: 9, background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Link2 size={22} />
+      {/* 클립보드 자동 감지 추천 카드 */}
+      {clipboardHint && (
+        <div style={{
+          marginBottom: 16,
+          padding: '16px 18px',
+          background: C.blueBg,
+          borderRadius: 16,
+          animation: 'slide-in 0.3s ease-out'
+        }}>
+          <style>{`@keyframes slide-in { from { opacity: 0; transform: translateY(-8px);} to { opacity: 1; transform: translateY(0);}}`}</style>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 16 }}>📋</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>방금 복사한 링크가 있어요</span>
+            <button onClick={dismissClipboard} style={{ 
+              marginLeft: 'auto', 
+              width: 24, height: 24, 
+              padding: 0, 
+              background: 'transparent', 
+              border: 'none', 
+              color: C.textLight, 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <X size={14} />
+            </button>
+          </div>
+          {clipboardHint.placeName && (
+            <div style={{ 
+              fontSize: 15, 
+              fontWeight: 700, 
+              color: C.text, 
+              marginBottom: 12,
+              padding: '10px 12px',
+              background: '#fff',
+              borderRadius: 10
+            }}>
+              📍 {clipboardHint.placeName}
+            </div>
+          )}
+          <button onClick={acceptClipboard} style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: C.blue,
+            color: '#fff',
+            border: 'none',
+            borderRadius: 10,
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6
+          }}>
+            바로 분석하기
+          </button>
+        </div>
+      )}
+
+      <button onClick={() => setView('link-input')} style={{ 
+        width: '100%', 
+        padding: '18px 20px', 
+        background: C.blue, 
+        color: '#fff', 
+        border: 'none', 
+        borderRadius: 14, 
+        marginBottom: 8, 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 14, 
+        textAlign: 'left',
+        boxShadow: '0 4px 12px rgba(49, 130, 246, 0.25)',
+        cursor: 'pointer'
+      }}>
+        <div style={{ 
+          width: 40, 
+          height: 40, 
+          borderRadius: 10, 
+          background: 'rgba(255,255,255,0.18)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          flexShrink: 0 
+        }}>
+          <Link2 size={20} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3 }}>네이버 플레이스 링크로 분석</div>
-          <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 1.4 }}>식당·카페·병원·미용실 등 모든 장소</div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 2, letterSpacing: '-0.015em' }}>
+            네이버 링크로 분석
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
+            식당·카페·미용실·병원 등
+          </div>
         </div>
-        <ChevronRight size={18} />
+        <ChevronRight size={20} />
       </button>
 
-      <div style={{ marginBottom: 28, padding: '12px 14px', background: C.bgSubtle, border: `1px dashed ${C.borderStrong}`, borderRadius: 10, fontSize: 11, color: C.textMid, lineHeight: 1.6 }}>
-        💡 야놀자·여기어때는 아래 <strong>이미지 캡처 업로드</strong>로 분석
-      </div>
-
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-          <div style={{ flex: 1, height: 1, background: C.border }}></div>
-          <span style={{ fontSize: 11, color: C.textLight, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>또는</span>
-          <div style={{ flex: 1, height: 1, background: C.border }}></div>
-        </div>
-        <button onClick={() => setView('image-input')} style={{ width: '100%', padding: '16px', background: C.bg, color: C.text, border: `1.5px solid ${C.border}`, borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}>
-          <div style={{ width: 38, height: 38, borderRadius: 8, background: C.bgSubtle, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Camera size={18} color={C.textMid} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>리뷰 스크린샷 업로드</div>
-            <div style={{ fontSize: 11, color: C.textMid }}>야놀자/여기어때/모든 사이트 가능</div>
-          </div>
-          <ChevronRight size={16} color={C.textLight} />
+      {/* 클립보드 수동 확인 (감지 안 됐을 때) */}
+      {!clipboardHint && (
+        <button 
+          onClick={checkClipboardForUrl}
+          style={{
+            width: '100%',
+            padding: '14px 16px',
+            background: C.bgSubtle,
+            color: C.textMid,
+            border: 'none',
+            borderRadius: 12,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6
+          }}
+        >
+          📋 복사한 링크 자동 감지
         </button>
-      </div>
+      )}
 
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.textMid, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-          이렇게 사용하세요
+      {/* 보조: 이미지 업로드 */}
+      <button onClick={() => setView('image-input')} style={{ 
+        width: '100%', 
+        padding: '16px 18px', 
+        background: C.bgSubtle, 
+        color: C.text, 
+        border: 'none', 
+        borderRadius: 14, 
+        marginBottom: 32,
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 12, 
+        textAlign: 'left',
+        cursor: 'pointer'
+      }}>
+        <div style={{ 
+          width: 36, 
+          height: 36, 
+          borderRadius: 10, 
+          background: '#fff', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          flexShrink: 0 
+        }}>
+          <Camera size={18} color={C.textMid} />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2, color: C.text }}>리뷰 스크린샷 분석</div>
+          <div style={{ fontSize: 11, color: C.textMid }}>야놀자·여기어때·에어비앤비 등</div>
+        </div>
+        <ChevronRight size={16} color={C.textLight} />
+      </button>
+
+      {/* 사용 안내 - 토스 스타일 카드 */}
+      <div style={{ marginBottom: 24 }}>
+        <h3 style={{ 
+          fontSize: 18, 
+          fontWeight: 700, 
+          color: C.text, 
+          margin: '0 0 14px', 
+          letterSpacing: '-0.02em' 
+        }}>
+          이렇게 쉬워요
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
-            { n: 1, t: '네이버 지도에서 식당·카페 검색', e: '🔍' },
-            { n: 2, t: '장소 페이지 → 공유 → 링크 복사', e: '🔗' },
-            { n: 3, t: '안전빵 열고 링크 붙여넣기', e: '🛡' },
-            { n: 4, t: '30초 후 손해 위험 확인', e: '✨' }
+            { n: 1, t: '네이버 지도에서 식당 클릭', e: '🔍' },
+            { n: 2, t: '공유 버튼 → 안전빵 선택', e: '📤' },
+            { n: 3, t: '30초 후 안전 점수 확인', e: '✨' }
           ].map(step => (
-            <div key={step.n} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: C.bgSubtle, borderRadius: 8 }}>
-              <div style={{ width: 24, height: 24, borderRadius: '50%', background: C.text, color: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+            <div key={step.n} style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 14, 
+              padding: '14px 16px', 
+              background: C.bgSubtle, 
+              borderRadius: 14 
+            }}>
+              <div style={{ 
+                width: 28, 
+                height: 28, 
+                borderRadius: 8, 
+                background: C.blue, 
+                color: '#fff', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                fontSize: 13, 
+                fontWeight: 700, 
+                flexShrink: 0 
+              }}>
                 {step.n}
               </div>
-              <div style={{ fontSize: 13, color: C.text, flex: 1, lineHeight: 1.5 }}>{step.t}</div>
-              <span style={{ fontSize: 18 }}>{step.e}</span>
+              <div style={{ fontSize: 14, color: C.text, flex: 1, fontWeight: 600, lineHeight: 1.4 }}>
+                {step.t}
+              </div>
+              <span style={{ fontSize: 22 }}>{step.e}</span>
             </div>
           ))}
         </div>
       </div>
 
+      {/* PWA 자동 설치 - 토스 스타일 강조 카드 */}
+      <SmartInstallButton installPrompt={installPrompt} installPWA={installPWA} isInstalled={isInstalled} />
+
       {savedCount > 0 && (
-        <div onClick={() => setView('saved')} style={{ padding: '14px 16px', background: C.bgSubtle, border: `1px solid ${C.border}`, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <BookmarkCheck size={18} color={C.text} />
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>담은 장소 {savedCount}개</div>
-            <div style={{ fontSize: 11, color: C.textMid }}>AI 비교 분석</div>
+        <div onClick={() => setView('saved')} style={{ 
+          padding: '16px 18px', 
+          background: C.bgSubtle, 
+          borderRadius: 14, 
+          cursor: 'pointer', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 12 
+        }}>
+          <div style={{ 
+            width: 36, 
+            height: 36, 
+            borderRadius: 10, 
+            background: '#fff', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            flexShrink: 0
+          }}>
+            <BookmarkCheck size={18} color={C.blue} />
           </div>
-          <ChevronRight size={16} color={C.textLight} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>담은 장소 {savedCount}개</div>
+            <div style={{ fontSize: 12, color: C.textMid }}>AI 비교 분석으로 베스트 찾기</div>
+          </div>
+          <ChevronRight size={18} color={C.textLight} />
         </div>
       )}
 
-      <div style={{ textAlign: 'center', fontSize: 11, color: C.textLight, marginTop: 40, paddingBottom: 20 }}>
+      <div style={{ textAlign: 'center', fontSize: 11, color: C.textLight, marginTop: 40, paddingBottom: 20, fontWeight: 500 }}>
         안전빵 · 결제 전 후회를 막는 AI
       </div>
     </div>
   );
 }
 
+// 스마트 PWA 설치 버튼 - 토스 스타일
+function SmartInstallButton({ installPrompt, installPWA, isInstalled }) {
+  const [isIOS, setIsIOS] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [isKakaoInApp, setIsKakaoInApp] = useState(false);
+  
+  useEffect(() => {
+    if (isInstalled) return;
+    if (!isMobile()) return;
+    
+    const ua = navigator.userAgent;
+    setIsIOS(/iPhone|iPad|iPod/i.test(ua));
+    setIsKakaoInApp(/KAKAOTALK/i.test(ua));
+    
+    const wasDismissed = localStorage.getItem('safebbang_pwa_dismissed');
+    if (wasDismissed) {
+      const dismissedTime = parseInt(wasDismissed, 10);
+      const daysPassed = (Date.now() - dismissedTime) / (1000 * 60 * 60 * 24);
+      // 7일 지나면 다시 표시
+      if (daysPassed < 7) setDismissed(true);
+    }
+  }, [isInstalled]);
+  
+  if (isInstalled || !isMobile() || dismissed) return null;
+  
+  const dismiss = () => {
+    setDismissed(true);
+    try { localStorage.setItem('safebbang_pwa_dismissed', String(Date.now())); } catch (e) {}
+  };
+  
+  // 카카오톡 내장 브라우저
+  if (isKakaoInApp) {
+    return (
+      <div style={{
+        marginBottom: 24,
+        padding: '20px 22px',
+        background: '#fef3c7',
+        borderRadius: 16,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <span style={{ fontSize: 28 }}>📱</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#78350f', marginBottom: 6, letterSpacing: '-0.015em' }}>
+              Chrome으로 열면 더 편해요
+            </div>
+            <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.6, marginBottom: 12 }}>
+              카톡 내장 브라우저에선 홈 화면 추가가 안 돼요. 우측 상단 메뉴 → "다른 브라우저로 열기" → Chrome 선택
+            </div>
+            <button onClick={dismiss} style={{
+              padding: '6px 12px',
+              background: 'transparent',
+              color: '#92400e',
+              border: '1px solid #fcd34d',
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}>
+              알겠어요
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // 안드로이드 자동 설치 가능 (Chrome 등)
+  if (installPrompt) {
+    return (
+      <div style={{
+        marginBottom: 24,
+        padding: '20px 22px',
+        background: 'linear-gradient(135deg, #3182f6 0%, #1b64da 100%)',
+        borderRadius: 16,
+        boxShadow: '0 8px 20px rgba(49, 130, 246, 0.3)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
+          <span style={{ fontSize: 32 }}>📲</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fff', marginBottom: 4, letterSpacing: '-0.02em' }}>
+              안전빵을 홈 화면에 추가하세요
+            </div>
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', lineHeight: 1.5, fontWeight: 500 }}>
+              네이버에서 공유 → 안전빵 → 자동 분석<br />
+              매번 앱 열지 않아도 돼요
+            </div>
+          </div>
+          <button onClick={dismiss} style={{ 
+            width: 24, height: 24, 
+            padding: 0, 
+            background: 'transparent', 
+            border: 'none', 
+            color: 'rgba(255,255,255,0.6)', 
+            cursor: 'pointer', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            flexShrink: 0 
+          }}>
+            <X size={14} />
+          </button>
+        </div>
+        <button onClick={installPWA} style={{
+          width: '100%',
+          padding: '14px 16px',
+          background: '#fff',
+          color: C.blue,
+          border: 'none',
+          borderRadius: 12,
+          fontSize: 15,
+          fontWeight: 700,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          letterSpacing: '-0.015em'
+        }}>
+          ⚡ 한 번에 설치하기
+        </button>
+      </div>
+    );
+  }
+  
+  // iOS Safari - 수동 안내
+  if (isIOS) {
+    return (
+      <div style={{
+        marginBottom: 24,
+        padding: '20px 22px',
+        background: C.blueBg,
+        borderRadius: 16,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <span style={{ fontSize: 28 }}>📲</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6, letterSpacing: '-0.015em' }}>
+              홈 화면에 추가하면 더 편해요
+            </div>
+            <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.7, marginBottom: 12 }}>
+              <span style={{ display: 'inline-block', padding: '2px 8px', background: '#fff', borderRadius: 6, marginRight: 4, fontWeight: 600 }}>1</span>
+              Safari 하단 <strong>공유 버튼</strong> 탭<br />
+              <span style={{ display: 'inline-block', padding: '2px 8px', background: '#fff', borderRadius: 6, marginRight: 4, fontWeight: 600, marginTop: 6 }}>2</span>
+              <strong>"홈 화면에 추가"</strong> 선택<br />
+              <span style={{ display: 'inline-block', padding: '2px 8px', background: '#fff', borderRadius: 6, marginRight: 4, fontWeight: 600, marginTop: 6 }}>3</span>
+              네이버 공유 시트에 안전빵 등장 ✨
+            </div>
+            <button onClick={dismiss} style={{
+              padding: '6px 12px',
+              background: 'transparent',
+              color: C.blue,
+              border: `1px solid ${C.blue}`,
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}>
+              알겠어요
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // 기타 (안드로이드인데 자동 설치 이벤트 없음 - 너무 빨리 진입했거나 이미 거부)
+  return null;
+}
+
+// 기존 InstallPWAHint는 SmartInstallButton로 대체되었으나, 호환성 위해 빈 컴포넌트로 유지
+function InstallPWAHint() {
+  return null;
+}
+
 function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
-  const site = url ? detectSite(url) : null;
+  // 자동 URL 추출
+  const extractedUrl = url ? extractNaverUrl(url) : null;
+  const placeName = url ? extractPlaceName(url) : null;
+  const site = extractedUrl ? detectSite(extractedUrl) : null;
   
   // URL 형식 체크
-  const isSearchUrl = url && (url.includes('/p/search/') || url.includes('?query='));
-  const isShortUrl = url && (url.includes('naver.me/') || url.includes('me2.do/'));
-  const isLikelyPlaceUrl = url && (
-    url.includes('pcmap.place.naver.com') || 
-    url.includes('m.place.naver.com') || 
-    url.includes('/entry/place/') ||
-    url.includes('/entry/restaurant/') ||
+  const isSearchUrl = extractedUrl && (extractedUrl.includes('/p/search/') || extractedUrl.includes('?query='));
+  const isShortUrl = extractedUrl && (extractedUrl.includes('naver.me/') || extractedUrl.includes('me2.do/'));
+  const isLikelyPlaceUrl = extractedUrl && (
+    extractedUrl.includes('pcmap.place.naver.com') || 
+    extractedUrl.includes('m.place.naver.com') || 
+    extractedUrl.includes('/entry/place/') ||
+    extractedUrl.includes('/entry/restaurant/') ||
     isShortUrl
   );
+  
+  // 사용자가 입력한 게 URL인지 텍스트 덩어리인지
+  const isTextBlock = url && url.trim().length > 0 && !isValidUrl(url.trim()) && extractedUrl;
 
   return (
     <div style={{ padding: '24px 0 0' }}>
@@ -473,53 +1097,65 @@ function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
         네이버 플레이스 링크
       </h2>
       <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 16px', lineHeight: 1.6 }}>
-        식당·카페·병원·미용실 등 네이버에 등록된 모든 장소를 분석합니다.
+        네이버 지도에서 <strong>공유</strong> 버튼으로 받은 텍스트를 통째로 붙여넣어도 돼요.
       </p>
 
       {/* 올바른 URL 가져오는 방법 안내 */}
       <details style={{ marginBottom: 16, padding: '12px 14px', background: C.bgSubtle, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
         <summary style={{ fontWeight: 600, color: C.text, listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-          ℹ️ 어떤 링크를 복사해야 하나요?
+          ℹ️ 어떻게 가져오나요?
           <ChevronDown size={12} style={{ marginLeft: 'auto' }} />
         </summary>
         <div style={{ marginTop: 10, color: C.textMid, lineHeight: 1.7 }}>
-          <strong style={{ color: C.text }}>✅ 올바른 방법</strong><br />
-          1. 네이버 지도 앱/웹에서 식당 검색<br />
-          2. <strong>식당을 클릭해서 상세 페이지로 진입</strong><br />
-          3. 상단 <strong>공유 버튼</strong> → URL 복사<br />
+          <strong style={{ color: C.text }}>가장 쉬운 방법</strong><br />
+          1. 네이버 지도 앱에서 식당 검색 → 클릭<br />
+          2. 상세 페이지에서 <strong>공유 버튼</strong> 탭<br />
+          3. 카톡/메모로 보내거나 URL 복사<br />
+          4. 받은 내용을 <strong>통째로 붙여넣기</strong><br />
           <br />
-          <strong style={{ color: C.red }}>❌ 잘못된 예시</strong><br />
-          • 검색 결과 페이지 (<code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>map.naver.com/p/search/...</code>)<br />
-          • 지도 화면 자체<br />
-          <br />
-          <strong style={{ color: C.green }}>✓ 올바른 예시</strong><br />
-          • <code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>pcmap.place.naver.com/restaurant/123/...</code><br />
-          • <code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>naver.me/xxxxx</code> (단축 URL)<br />
-          • <code style={{ fontSize: 10, background: C.bg, padding: '1px 4px', borderRadius: 3 }}>map.naver.com/p/entry/place/123</code>
+          <strong style={{ color: C.green }}>안전빵이 자동으로 URL만 찾아냅니다.</strong>
         </div>
       </details>
 
       <textarea
         value={url}
         onChange={(e) => { setUrl(e.target.value); setError(''); }}
-        placeholder="https://map.naver.com/p/entry/place/... 또는 https://naver.me/..."
-        rows={3}
+        placeholder="네이버 지도에서 공유받은 내용을 붙여넣으세요. URL만 있어도 OK."
+        rows={4}
         autoFocus
         style={{ width: '100%', padding: '14px', border: `1.5px solid ${C.border}`, borderRadius: 8, fontSize: 13, outline: 'none', boxSizing: 'border-box', background: C.bgSubtle, color: C.text, resize: 'none', lineHeight: 1.5, marginBottom: 12 }}
       />
 
-      {/* 검색 페이지 URL 감지 시 즉시 경고 */}
-      {url && isSearchUrl && (
-        <div style={{ display: 'flex', gap: 8, padding: '12px 14px', background: C.redBg, color: C.red, borderRadius: 8, fontSize: 12, marginBottom: 12, fontWeight: 500, lineHeight: 1.5 }}>
-          <AlertCircle size={14} />
-          <div>
-            <strong>검색 결과 페이지예요</strong><br />
-            식당을 클릭해서 들어간 상세 페이지에서 공유 → URL 복사 해주세요.
+      {/* 텍스트 덩어리에서 URL 자동 추출됨 표시 */}
+      {isTextBlock && (
+        <div style={{ padding: '12px 14px', background: '#f0f9ff', border: `1px solid #bae6fd`, borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color: C.blue, fontWeight: 600 }}>
+            <Sparkles size={12} fill={C.blue} />
+            <span>자동으로 링크를 찾았어요</span>
+          </div>
+          {placeName && (
+            <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 4 }}>
+              📍 {placeName}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: C.textMid, fontFamily: 'ui-monospace, monospace', wordBreak: 'break-all' }}>
+            {extractedUrl}
           </div>
         </div>
       )}
 
-      {site && !isSearchUrl && (
+      {/* 검색 페이지 URL 감지 시 즉시 경고 */}
+      {extractedUrl && isSearchUrl && (
+        <div style={{ display: 'flex', gap: 8, padding: '12px 14px', background: C.redBg, color: C.red, borderRadius: 8, fontSize: 12, marginBottom: 12, fontWeight: 500, lineHeight: 1.5 }}>
+          <AlertCircle size={14} />
+          <div>
+            <strong>검색 결과 페이지예요</strong><br />
+            식당을 클릭해서 들어간 상세 페이지에서 공유 → 다시 시도해주세요.
+          </div>
+        </div>
+      )}
+
+      {site && !isSearchUrl && !isTextBlock && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: site.supported ? C.greenBg : C.orangeBg, color: site.supported ? C.green : C.orange, borderRadius: 8, fontSize: 12, marginBottom: 12, fontWeight: 600 }}>
           {site.supported ? <Check size={14} /> : <AlertCircle size={14} />}
           <span>{site.emoji} {site.name} 감지됨 {isShortUrl && '(단축 URL · 자동 펼침)'}</span>
@@ -541,8 +1177,8 @@ function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
 
       <button 
         onClick={analyzeUrl} 
-        disabled={!url.trim() || (site && !site.supported) || isSearchUrl} 
-        style={{ width: '100%', padding: '15px 16px', background: (url.trim() && site?.supported && !isSearchUrl) ? C.text : C.border, color: (url.trim() && site?.supported && !isSearchUrl) ? C.bg : C.textLight, border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+        disabled={!extractedUrl || !site?.supported || isSearchUrl} 
+        style={{ width: '100%', padding: '15px 16px', background: (extractedUrl && site?.supported && !isSearchUrl) ? C.text : C.border, color: (extractedUrl && site?.supported && !isSearchUrl) ? C.bg : C.textLight, border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
       >
         <Sparkles size={16} /> 손해 위험 분석 시작
       </button>
@@ -722,7 +1358,22 @@ function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHo
         </a>
       )}
 
-      <div style={{ marginBottom: 8 }}><span style={{ fontSize: 32 }}>{result.emoji || '📍'}</span></div>
+      <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 32 }}>{result.emoji || '📍'}</span>
+        {result.categoryLabel && (
+          <span style={{ 
+            padding: '4px 10px', 
+            background: C.bgSubtle, 
+            color: C.textMid, 
+            border: `1px solid ${C.border}`,
+            borderRadius: 100, 
+            fontSize: 11, 
+            fontWeight: 600 
+          }}>
+            {result.categoryLabel}
+          </span>
+        )}
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 700, color: C.text, margin: '0 0 10px', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
         {result.name}
       </h1>
@@ -778,6 +1429,9 @@ function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHo
         </div>
       </div>
 
+      {/* 🆕 큰 추천/비추천 배지 */}
+      {result.verdict && <VerdictBadge result={result} />}
+
       {result.recentSignal && result.recentSignal !== '특이 신호 없음' && (
         <div style={{ display: 'flex', gap: 10, padding: '12px 14px', background: C.orangeBg, borderRadius: 8, marginBottom: 20 }}>
           <TrendingDown size={16} color={C.orange} />
@@ -818,12 +1472,164 @@ function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHo
 
       <div style={{ height: 1, background: C.border, margin: '24px 0' }} />
 
-      <button onClick={() => setView('link-input')} style={{ width: '100%', padding: '12px 16px', background: C.bgSubtle, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}>
-        <Link2 size={14} /> 다른 곳 분석
+      {/* 🆕 다음 후보 분석 - 큰 메인 액션 */}
+      <div style={{
+        padding: '18px 16px',
+        background: 'linear-gradient(135deg, #f0f4ff 0%, #e8ecff 100%)',
+        border: '1px solid #d4dbff',
+        borderRadius: 12,
+        marginBottom: 12
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+          🔄 다른 후보도 비교해보세요
+        </div>
+        <div style={{ fontSize: 11, color: C.textMid, marginBottom: 12, lineHeight: 1.5 }}>
+          네이버에서 다른 식당 공유받아 안전빵에 붙여넣으면 자동 분석.<br />
+          "담아두기"로 여러 곳 한꺼번에 비교 가능.
+        </div>
+        <button 
+          onClick={() => setView('link-input')} 
+          style={{ 
+            width: '100%', padding: '12px 16px', background: '#5b6ee1', color: '#fff', 
+            border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, 
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' 
+          }}
+        >
+          <Link2 size={14} /> 다음 후보 분석하기
+        </button>
+      </div>
+
+      <button onClick={() => setView('home')} style={{ width: '100%', padding: '12px 16px', background: C.bgSubtle, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8, cursor: 'pointer' }}>
+        🏠 안전빵 홈으로
       </button>
-      <button onClick={() => setView('saved')} style={{ width: '100%', padding: '12px 16px', background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 14, fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+      
+      <button onClick={() => setView('saved')} style={{ width: '100%', padding: '12px 16px', background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}>
         <BarChart size={14} /> 담은 장소 비교
       </button>
+    </div>
+  );
+}
+
+function VerdictBadge({ result }) {
+  const verdictMap = {
+    recommend: { 
+      label: '추천', 
+      icon: '👍',
+      color: C.green, 
+      bg: 'linear-gradient(135deg, #ddedea 0%, #c5dfd6 100%)',
+      borderColor: C.green,
+      tagColor: '#fff'
+    },
+    consider: { 
+      label: '고려해볼만', 
+      icon: '🟢',
+      color: '#7a8a17', 
+      bg: 'linear-gradient(135deg, #eef0d5 0%, #e0e4b8 100%)',
+      borderColor: '#7a8a17',
+      tagColor: '#fff'
+    },
+    caution: { 
+      label: '신중히 결정', 
+      icon: '⚠️',
+      color: C.orange, 
+      bg: 'linear-gradient(135deg, #fbf0e1 0%, #f5dbb0 100%)',
+      borderColor: C.orange,
+      tagColor: '#fff'
+    },
+    avoid: { 
+      label: '비추천', 
+      icon: '👎',
+      color: C.red, 
+      bg: 'linear-gradient(135deg, #fdecec 0%, #f9c8c8 100%)',
+      borderColor: C.red,
+      tagColor: '#fff'
+    },
+    strongly_avoid: { 
+      label: '강력 비추', 
+      icon: '🚫',
+      color: '#991b1b', 
+      bg: 'linear-gradient(135deg, #fde0e0 0%, #f5b5b5 100%)',
+      borderColor: '#991b1b',
+      tagColor: '#fff'
+    }
+  };
+  
+  const v = verdictMap[result.verdict] || verdictMap.caution;
+  const reasons = result.verdictReasons || [];
+  
+  return (
+    <div style={{ 
+      padding: '18px 20px', 
+      background: v.bg, 
+      borderRadius: 12, 
+      marginBottom: 20, 
+      border: `2px solid ${v.borderColor}` 
+    }}>
+      {/* 상단: 큰 추천/비추천 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+        <span style={{ fontSize: 36 }}>{v.icon}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ 
+            display: 'inline-block', 
+            padding: '4px 12px', 
+            background: v.color, 
+            color: v.tagColor, 
+            borderRadius: 100, 
+            fontSize: 12, 
+            fontWeight: 700, 
+            marginBottom: 4 
+          }}>
+            안전빵 판단: {v.label}
+          </div>
+          {result.verdictHeadline && (
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text, lineHeight: 1.3, letterSpacing: '-0.015em' }}>
+              {result.verdictHeadline}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 이유 3가지 */}
+      {reasons.length > 0 && (
+        <div style={{ background: 'rgba(255,255,255,0.7)', borderRadius: 8, padding: '12px 14px', marginBottom: (result.bestFor || result.worstFor) ? 10 : 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            이렇게 판단했어요
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {reasons.map((r, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 16, flexShrink: 0, lineHeight: 1.2 }}>{r.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{r.title}</div>
+                  <div style={{ fontSize: 11.5, color: C.textMid, lineHeight: 1.5 }}>{r.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 추천/비추 대상 */}
+      {result.bestFor && (result.verdict === 'recommend' || result.verdict === 'consider') && (
+        <div style={{ 
+          display: 'flex', gap: 8, padding: '10px 12px', 
+          background: 'rgba(255,255,255,0.6)', borderRadius: 6, fontSize: 12,
+          marginTop: 8
+        }}>
+          <span style={{ color: C.green, fontWeight: 700, flexShrink: 0 }}>✓ 추천:</span>
+          <span style={{ color: C.text, lineHeight: 1.5 }}>{result.bestFor}</span>
+        </div>
+      )}
+      {result.worstFor && (result.verdict === 'avoid' || result.verdict === 'strongly_avoid' || result.verdict === 'caution') && (
+        <div style={{ 
+          display: 'flex', gap: 8, padding: '10px 12px', 
+          background: 'rgba(255,255,255,0.6)', borderRadius: 6, fontSize: 12,
+          marginTop: 8
+        }}>
+          <span style={{ color: C.red, fontWeight: 700, flexShrink: 0 }}>✗ 비추:</span>
+          <span style={{ color: C.text, lineHeight: 1.5 }}>{result.worstFor}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1249,9 +2055,9 @@ function PersonalScenario({ result }) {
   };
 
   const verdictStyle = (v) => {
-    if (v === 'stop') return { c: C.red, bg: C.redBg, label: '예약 중단 권장' };
-    if (v === 'caution') return { c: C.orange, bg: C.orangeBg, label: '신중히 결정' };
-    return { c: C.green, bg: C.greenBg, label: '예약해도 무방' };
+    if (v === 'stop') return { c: C.red, bg: C.redBg, label: '내 상황엔 비추천' };
+    if (v === 'caution') return { c: C.orange, bg: C.orangeBg, label: '내 상황엔 신중히' };
+    return { c: C.green, bg: C.greenBg, label: '내 상황엔 추천' };
   };
 
   return (
@@ -1290,13 +2096,71 @@ function PersonalScenario({ result }) {
               <span>예상 손실: {scenario.estimatedLoss}</span>
             </div>
           )}
-          <div style={{ padding: '11px 14px', borderRadius: 6, background: verdictStyle(scenario.verdict).bg, marginBottom: 10 }}>
-            <div style={{ display: 'inline-block', padding: '2px 8px', color: '#fff', background: verdictStyle(scenario.verdict).c, borderRadius: 3, fontSize: 10, fontWeight: 700, marginBottom: 6 }}>
-              {verdictStyle(scenario.verdict).label}
+          
+          {/* 🆕 큰 판단 카드 */}
+          <div style={{ 
+            padding: '14px 16px', 
+            borderRadius: 8, 
+            background: verdictStyle(scenario.verdict).bg, 
+            marginBottom: 10,
+            border: `2px solid ${verdictStyle(scenario.verdict).c}`
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 22 }}>
+                {scenario.verdict === 'go' ? '👍' : scenario.verdict === 'stop' ? '🚫' : '⚠️'}
+              </span>
+              <div style={{ 
+                padding: '3px 10px', 
+                color: '#fff', 
+                background: verdictStyle(scenario.verdict).c, 
+                borderRadius: 100, 
+                fontSize: 11, 
+                fontWeight: 700 
+              }}>
+                {scenario.verdictLabel || verdictStyle(scenario.verdict).label}
+              </div>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: verdictStyle(scenario.verdict).c, marginBottom: 4 }}>{scenario.verdictMessage}</div>
-            {scenario.alternativeHint && <div style={{ fontSize: 11.5, color: C.textMid, lineHeight: 1.5 }}>💡 {scenario.alternativeHint}</div>}
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 10, lineHeight: 1.4 }}>
+              {scenario.verdictMessage}
+            </div>
+            
+            {/* 이유 리스트 */}
+            {scenario.verdictReasons?.length > 0 && (
+              <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 6, padding: '10px 12px', marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: C.textMid, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  판단 근거
+                </div>
+                {scenario.verdictReasons.map((r, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 11.5, color: C.text, lineHeight: 1.5 }}>
+                    <span style={{ flexShrink: 0 }}>{r.icon}</span>
+                    <span>{r.reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {scenario.alternativeHint && (
+              <div style={{ fontSize: 11.5, color: C.textMid, lineHeight: 1.5, padding: '6px 0' }}>
+                💡 {scenario.alternativeHint}
+              </div>
+            )}
           </div>
+          
+          {/* 🆕 그래도 간다면 팁 */}
+          {scenario.ifGoTips?.length > 0 && (
+            <div style={{ padding: '12px 14px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.orange, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                그래도 간다면 이건 챙기세요
+              </div>
+              {scenario.ifGoTips.map((tip, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+                  <span style={{ color: C.orange, fontWeight: 700, flexShrink: 0 }}>•</span>
+                  <span>{tip}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          
           <button onClick={() => { setScenario(null); setSituation(''); }} style={{ padding: '6px 11px', background: 'transparent', color: C.textMid, border: `1px solid ${C.border}`, borderRadius: 4, fontSize: 11, fontWeight: 500 }}>다른 상황</button>
         </div>
       )}

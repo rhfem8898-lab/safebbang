@@ -3,6 +3,7 @@
 // body: { place: {...}, situation: string }
 
 const SCENARIO_PROMPT = `안전빵 개인 손실 시나리오 생성기.
+사용자의 구체적 상황과 장소의 위험을 교차 분석해, 명확한 결정을 도와줍니다.
 
 JSON만:
 {
@@ -14,11 +15,25 @@ JSON만:
   ],
   "estimatedLoss": "예상 손실 금액·영향(40자)",
   "verdict": "go|caution|stop",
-  "verdictMessage": "판단(30자)",
-  "alternativeHint": "대안 힌트(40자)"
+  "verdictLabel": "이 상황엔 추천|이 상황엔 신중히|이 상황엔 비추",
+  "verdictMessage": "판단 한 문장(40자)",
+  "verdictReasons": [
+    {"icon": "✅|⚠️|❌", "reason": "구체적 이유(40자)"},
+    ...2~3개
+  ],
+  "alternativeHint": "더 나은 대안 제안(50자)",
+  "ifGoTips": [
+    "그래도 간다면 이건 조심하세요(40자)",
+    "...",
+    "..."
+  ]
 }
 
-원칙: 사용자 상황과 장소 위험의 교차점. 손실 프레이밍. 과장 금지.`;
+원칙: 
+- 사용자의 구체적 상황(나이, 동반자, 예산, 알레르기 등)과 장소 위험의 교차점 찾기
+- 같은 장소라도 상황에 따라 판단 다름 (혼자면 OK, 가족이면 비추 등)
+- 손실 프레이밍, 과장 금지
+- ifGoTips는 verdict가 caution 이상일 때만 (recommend면 빈 배열)`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

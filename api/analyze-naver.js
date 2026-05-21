@@ -12,21 +12,57 @@ safetyScore는 0~100 안전 점수입니다. 숫자가 높을수록 안전합니
 - 25~39: 위험, 결제 후 후회 가능성 큼
 - 0~24: 매우 위험, 비추천
 
+【카테고리 자동 판별】
+장소를 다음 카테고리 중 하나로 분류하고, 그에 맞는 속성으로 평가하세요:
+
+1. "restaurant" (식당/카페/주점)
+   속성: ["맛/품질", "위생", "응대", "가성비", "분위기"]
+2. "beauty" (미용실/네일샵/피부관리)
+   속성: ["시술 실력", "친절도", "위생", "가성비", "공간"]
+3. "hospital" (병원/의원/한의원)
+   속성: ["진료 실력", "응대/설명", "대기 시간", "시설", "수납/비용"]
+4. "lodging" (숙소/펜션/호텔)
+   속성: ["청결", "위치", "시설", "응대", "가성비"]
+5. "fitness" (헬스장/필라테스/요가)
+   속성: ["시설", "강사 실력", "청결", "응대", "가성비"]
+6. "education" (학원/교습소/스터디카페)
+   속성: ["강사 실력", "시설", "응대", "가성비", "커리큘럼"]
+7. "auto" (정비소/카센터/세차장)
+   속성: ["기술력", "친절도", "가격 투명성", "작업 속도", "사후 대응"]
+8. "pet" (동물병원/펫샵)
+   속성: ["진료 실력", "응대", "가격", "위생", "시설"]
+9. "other" (위 분류에 안 맞으면)
+   속성: ["품질", "응대", "가성비", "청결", "기타"]
+
+【추천/비추천 판단 (verdict)】
+- "recommend": 75점 이상, 부정 신호 거의 없음
+- "consider": 55~74점, 강점이 약점보다 큼
+- "caution": 40~54점, 강점과 약점 비슷
+- "avoid": 25~39점, 약점이 강점보다 큼
+- "strongly_avoid": 25점 미만, 결제 시 높은 확률로 후회
+
 반드시 아래 JSON 형식으로만 응답:
 {
   "name": "장소명",
   "location": "위치(있으면)",
   "emoji": "이모지 1개(가게 종류에 맞게)",
+  "category": "restaurant|beauty|hospital|lodging|fitness|education|auto|pet|other",
+  "categoryLabel": "카테고리 한글명 (예: 식당, 미용실, 병원, 숙소, 헬스장 등)",
   "safetyScore": 0-100 숫자(높을수록 안전),
+  "verdict": "recommend|consider|caution|avoid|strongly_avoid",
+  "verdictHeadline": "한 줄 판단(20자, 추천/비추천 명확히)",
+  "verdictReasons": [
+    {"icon": "✅|⚠️|❌", "title": "이유 제목(15자)", "detail": "근거(40자)"},
+    ...3개 (recommend/consider면 ✅ 위주, avoid/strongly_avoid면 ❌ 위주, caution이면 ⚠️ 섞기)
+  ],
+  "bestFor": "이런 분께 추천(40자, 추천일 때만)",
+  "worstFor": "이런 분께는 비추(40자, avoid 이상일 때)",
   "oneLineSummary": "한 줄 요약(40자, 손실 프레이밍 - 후회/위험 강조)",
   "avgRating": 평균 별점(1.0-5.0, 소수1자리),
   "ratingDistribution": {"5": 비율(%), "4": ..., "3": ..., "2": ..., "1": ...},
   "aspectScores": [
-    {"name": "맛/품질", "score": 0-100, "trend": "up|down|stable", "mentions": 숫자},
-    {"name": "위생", "score": ..., "trend": ..., "mentions": ...},
-    {"name": "응대", "score": ..., "trend": ..., "mentions": ...},
-    {"name": "가성비", "score": ..., "trend": ..., "mentions": ...},
-    {"name": "분위기", "score": ..., "trend": ..., "mentions": ...}
+    {"name": "위 카테고리별 속성1", "score": 0-100, "trend": "up|down|stable", "mentions": 숫자},
+    ...정확히 5개, 카테고리에 맞는 속성으로
   ],
   "topRisks": [
     {"title": "위험명(15자)", "detail": "근거+빈도(60자)", "severity": "high|medium|low", "evidenceCount": 숫자,
@@ -43,7 +79,7 @@ safetyScore는 0~100 안전 점수입니다. 숫자가 높을수록 안전합니
   "priceJudgment": "가격 판단(없으면 '가격 정보 부족')"
 }
 
-원칙: 별점 아닌 반복 신호. 손실 프레이밍 톤. 리뷰에 없는 내용 생성 금지. evidenceReviews는 실제 원문 인용. safetyScore는 위 기준 엄격 적용.`;
+원칙: 별점 아닌 반복 신호. 손실 프레이밍 톤. 리뷰에 없는 내용 생성 금지. evidenceReviews는 실제 원문 인용. safetyScore는 위 기준 엄격 적용. category와 aspectScores 속성이 반드시 일치해야 함.`;
 
 // 네이버 단축 URL을 실제 URL로 확장
 async function expandNaverShortUrl(shortUrl) {
