@@ -182,8 +182,7 @@ async function fetchProductInfo(storeSlug, productId, isBrand) {
 }
 
 // 네이버 스마트스토어 리뷰 가져오기 (내부 API 직접 호출)
-async function fetchProductReviews(productId, page = 1) {
-  // 네이버 스마트스토어 리뷰 API
+async function fetchProductReviews(productId, page = 1, sortType = 'REVIEW_RANKING') {
   const url = `https://smartstore.naver.com/i/v1/reviews/paged-reviews`;
   
   try {
@@ -200,13 +199,13 @@ async function fetchProductReviews(productId, page = 1) {
         pageSize: 20,
         merchantNo: null,
         originProductNo: productId,
-        sortType: 'REVIEW_RANKING',
-        reviewSearchSortType: 'REVIEW_RANKING'
+        sortType: sortType,
+        reviewSearchSortType: sortType
       })
     });
     
     if (!res.ok) {
-      console.log('Review API 실패, status:', res.status);
+      console.log(`Review API 실패, status: ${res.status}, page: ${page}, sortType: ${sortType}`);
       return null;
     }
     
@@ -218,34 +217,130 @@ async function fetchProductReviews(productId, page = 1) {
   }
 }
 
-// 리뷰 페이지 여러 개 병렬로 가져오기
+// 딜레이 헬퍼
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// 리뷰 수집 - 순차 호출 + 딜레이 (rate limit 회피)
+// 옵션 B: 위험 강조 샘플링
+// - 최신 60개 (현재 상태 반영)
+// - 별점 낮은 순 40개 (위험 신호 강조)
 async function fetchAllReviews(productId, maxReviews = 100) {
-  const pageSize = 20;
-  const maxPages = Math.ceil(maxReviews / pageSize);
+  const allReviews = [];
+  const seenIds = new Set();
   
-  // 첫 페이지 먼저 (총 개수 확인용)
-  const firstPage = await fetchProductReviews(productId, 1);
-  if (!firstPage || !firstPage.contents) return [];
-  
-  const allReviews = [...firstPage.contents];
-  const totalElements = firstPage.totalElements || allReviews.length;
-  const actualPages = Math.min(maxPages, Math.ceil(totalElements / pageSize));
-  
-  if (actualPages > 1) {
-    // 나머지 페이지 병렬로
-    const promises = [];
-    for (let i = 2; i <= actualPages; i++) {
-      promises.push(fetchProductReviews(productId, i));
-    }
-    const results = await Promise.allSettled(promises);
-    results.forEach(r => {
-      if (r.status === 'fulfilled' && r.value?.contents) {
-        allReviews.push(...r.value.contents);
+  // 1단계: 최신순 60개 (3 페이지)
+  console.log('1단계: 최신 리뷰 수집 시작');
+  for (let page = 1; page <= 3; page++) {
+    const data = await fetchProductReviews(productId, page, 'RECENT_REVIEW');
+    if (!data?.contents || data.contents.length === 0) break;
+    
+    data.contents.forEach(r => {
+      const id = r.reviewId || r.id || `${r.createDate}_${r.writerId}`;
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        allReviews.push(r);
       }
     });
+    
+    // 페이지 간 딜레이 (rate limit 회피)
+    if (page < 3) await sleep(800);
   }
   
+  console.log(`최신 리뷰: ${allReviews.length}개`);
+  
+  // 잠시 쉬기
+  await sleep(1200);
+  
+  // 2단계: 별점 낮은 순 40개 (2 페이지) - 위험 신호 강조 (옵션 B)
+  console.log('2단계: 별점 낮은 리뷰 수집 시작');
+  for (let page = 1; page <= 2; page++) {
+    const data = await fetchProductReviews(productId, page, 'REVIEW_SCORE_LOW');
+    if (!data?.contents || data.contents.length === 0) break;
+    
+    data.contents.forEach(r => {
+      const id = r.reviewId || r.id || `${r.createDate}_${r.writerId}`;
+      if (!seenIds.has(id)) {
+        seenIds.add(id);
+        allReviews.push(r);
+      }
+    });
+    
+    if (page < 2) await sleep(800);
+  }
+  
+  console.log(`총 리뷰: ${allReviews.length}개`);
+  
   return allReviews.slice(0, maxReviews);
+}
+
+// 점수 차감 방식으로 계산 (옵션 B 가중치)
+function calculateSafetyScore(reviews, aiAnalysis) {
+  let score = 100;
+  
+  // 별점 분포 계산
+  const ratingCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  reviews.forEach(r => {
+    const rating = parseInt(r.reviewScore || r.score || 0);
+    if (rating >= 1 && rating <= 5) ratingCounts[rating]++;
+  });
+  
+  const total = reviews.length || 1;
+  
+  // 옵션 B: 3점 이하가 전체의 65% 가중치
+  // 1점 리뷰 1개당 -2점
+  score -= ratingCounts[1] * 2;
+  // 2점 리뷰 1개당 -1점
+  score -= ratingCounts[2] * 1;
+  // 3점 리뷰 1개당 -0.3점 (10% 가중)
+  score -= ratingCounts[3] * 0.3;
+  
+  // 5점 리뷰가 90% 이상이면 광고 의심 → 가점 안 줌
+  // 5점 리뷰가 60% 이상이고 5점 광고 의심 안 되면 가점
+  const fiveRatio = ratingCounts[5] / total;
+  if (fiveRatio < 0.9 && fiveRatio > 0.6) {
+    score += 3; // 진정성 있는 긍정 리뷰
+  }
+  
+  // 최근 10개 중 1~2점이 5개 이상 → 최근 악화 -10점
+  const recent10 = reviews.slice(0, 10);
+  const recentLow = recent10.filter(r => {
+    const rating = parseInt(r.reviewScore || r.score || 0);
+    return rating <= 2;
+  }).length;
+  if (recentLow >= 5) score -= 10;
+  
+  // AI가 발견한 위험 신호 반영
+  if (aiAnalysis) {
+    // 사진 vs 실물 차이가 심각하면
+    if (aiAnalysis.photoMatch && /다르|차이|실망|속았/.test(aiAnalysis.photoMatch)) {
+      score -= 5;
+    }
+    // CS 문제
+    if (aiAnalysis.csQuality && /불친절|환불.{0,5}거부|연락.{0,5}안/.test(aiAnalysis.csQuality)) {
+      score -= 5;
+    }
+    // 광고 의심 비율 높음
+    if (aiAnalysis.fakeReviewRatio && /[4-9]\d.{0,3}%|100.{0,3}%/.test(aiAnalysis.fakeReviewRatio)) {
+      score -= 10;
+    }
+    // 심각한 위험 신호 (high severity) 개수만큼 추가 감점
+    const highRisks = (aiAnalysis.topRisks || []).filter(r => r.severity === 'high').length;
+    score -= highRisks * 3;
+  }
+  
+  // 범위 제한
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  
+  return score;
+}
+
+// 점수에 따른 verdict 결정 (백엔드에서 강제)
+function determineVerdict(score) {
+  if (score >= 75) return 'recommend';
+  if (score >= 55) return 'consider';
+  if (score >= 40) return 'caution';
+  if (score >= 25) return 'avoid';
+  return 'strongly_avoid';
 }
 
 export default async function handler(req, res) {
@@ -342,6 +437,14 @@ export default async function handler(req, res) {
       if (m) analysis = JSON.parse(m[0]);
       else throw new Error('응답 파싱 실패');
     }
+
+    // 점수 차감 방식으로 재계산 (옵션 B: 3점 이하 65% 가중)
+    const calculatedScore = calculateSafetyScore(reviews, analysis);
+    const calculatedVerdict = determineVerdict(calculatedScore);
+    
+    // AI 점수 대신 계산된 점수 사용 (일관성 보장)
+    analysis.safetyScore = calculatedScore;
+    analysis.verdict = calculatedVerdict;
 
     return res.status(200).json({
       ...analysis,

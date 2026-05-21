@@ -581,7 +581,7 @@ function App() {
     // 사이트별 API 분기
     const apiEndpoint = site.id === 'smartstore' ? 'analyze-smartstore' : 'analyze-naver';
     const stageMessages = site.id === 'smartstore' 
-      ? ['스마트스토어 접근 중', '상품 리뷰 100개 수집 중', 'AI가 구매 위험 분석 중', '결과 정리 중']
+      ? ['스마트스토어 접근 중', '최신 리뷰 수집 중', '낮은 별점 리뷰 수집 중', 'AI가 위험 신호 분석 중', '결과 정리 중']
       : ['네이버 플레이스 접근 중', '리뷰 100개 수집 중 (약 30~40초)', 'AI가 위험 신호 분석 중', '결과 정리 중'];
     
     try {
