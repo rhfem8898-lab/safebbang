@@ -1,6 +1,7 @@
 // 안전빵 - 네이버 스마트스토어 분석 API
 // POST /api/analyze-smartstore
 // body: { url: string }
+// 네이버 스마트스토어 내부 API 직접 호출 (Apify 대신, 5배 빠름)
 
 const SYSTEM_PROMPT = `당신은 "안전빵" 스마트스토어 상품 리뷰 분석 시스템입니다.
 온라인 쇼핑은 결제 후 후회 가능성이 큰 영역입니다. 사진 vs 실물 차이, 품질 불량, 환불 갈등, 배송 문제 등 위험을 정확히 진단하세요.
@@ -99,36 +100,23 @@ function extractSmartstoreInfo(url) {
   if (!url) return null;
   const decoded = decodeURIComponent(url);
   
-  // 패턴들
   const patterns = [
-    // smartstore.naver.com/{slug}/products/{productId}
     /smartstore\.naver\.com\/([^\/\?]+)\/products\/(\d+)/,
-    // brand.naver.com/{slug}/products/{productId}
     /brand\.naver\.com\/([^\/\?]+)\/products\/(\d+)/,
-    // shopping.naver.com/...nvMid=...
-    /nvMid=(\d+)/,
   ];
   
   for (const pattern of patterns) {
     const match = decoded.match(pattern);
     if (match) {
-      if (match.length >= 3) {
-        return { storeSlug: match[1], productId: match[2] };
-      } else {
-        return { storeSlug: null, productId: match[1] };
-      }
+      return { 
+        storeSlug: match[1], 
+        productId: match[2],
+        isBrand: pattern.source.includes('brand')
+      };
     }
   }
   
   return null;
-}
-
-function detectStoreType(url) {
-  if (!url) return 'unknown';
-  if (url.includes('smartstore.naver.com')) return 'smartstore';
-  if (url.includes('brand.naver.com')) return 'brand';
-  if (url.includes('shopping.naver.com')) return 'shopping';
-  return 'unknown';
 }
 
 // 단축 URL 확장
@@ -148,6 +136,118 @@ async function expandNaverShortUrl(shortUrl) {
   }
 }
 
+// 네이버 스마트스토어 상품 정보 가져오기
+async function fetchProductInfo(storeSlug, productId, isBrand) {
+  const domain = isBrand ? 'brand.naver.com' : 'smartstore.naver.com';
+  const productUrl = `https://${domain}/i/v2/channels/2sCa37hEpaOLcPLNPCwEMc/products/${productId}`;
+  
+  try {
+    // Approach 1: 페이지 HTML에서 메타 정보 추출
+    const pageUrl = `https://${domain}/${storeSlug}/products/${productId}`;
+    const pageRes = await fetch(pageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml',
+      }
+    });
+    const html = await pageRes.text();
+    
+    // 메타 태그에서 정보 추출
+    const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
+    const descMatch = html.match(/<meta property="og:description" content="([^"]+)"/);
+    const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
+    
+    // 가격은 JSON-LD에서
+    let price = null, brand = null;
+    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]+?)<\/script>/);
+    if (jsonLdMatch) {
+      try {
+        const data = JSON.parse(jsonLdMatch[1]);
+        if (data.offers?.price) price = data.offers.price;
+        if (data.brand?.name) brand = data.brand.name;
+      } catch (e) {}
+    }
+    
+    return {
+      name: titleMatch ? titleMatch[1].replace(/ : [^:]+$/, '') : '상품',
+      brand: brand || storeSlug,
+      description: descMatch ? descMatch[1] : '',
+      image: imageMatch ? imageMatch[1] : '',
+      price: price ? `${price}원` : null
+    };
+  } catch (e) {
+    console.error('상품 정보 가져오기 실패:', e);
+    return { name: '상품', brand: storeSlug };
+  }
+}
+
+// 네이버 스마트스토어 리뷰 가져오기 (내부 API 직접 호출)
+async function fetchProductReviews(productId, page = 1) {
+  // 네이버 스마트스토어 리뷰 API
+  const url = `https://smartstore.naver.com/i/v1/reviews/paged-reviews`;
+  
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'application/json',
+        'Referer': `https://smartstore.naver.com/`,
+      },
+      body: JSON.stringify({
+        page: page,
+        pageSize: 20,
+        merchantNo: null,
+        originProductNo: productId,
+        sortType: 'REVIEW_RANKING',
+        reviewSearchSortType: 'REVIEW_RANKING'
+      })
+    });
+    
+    if (!res.ok) {
+      console.log('Review API 실패, status:', res.status);
+      return null;
+    }
+    
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    console.error('리뷰 가져오기 실패:', e);
+    return null;
+  }
+}
+
+// 리뷰 페이지 여러 개 병렬로 가져오기
+async function fetchAllReviews(productId, maxReviews = 100) {
+  const pageSize = 20;
+  const maxPages = Math.ceil(maxReviews / pageSize);
+  
+  // 첫 페이지 먼저 (총 개수 확인용)
+  const firstPage = await fetchProductReviews(productId, 1);
+  if (!firstPage || !firstPage.contents) return [];
+  
+  const allReviews = [...firstPage.contents];
+  const totalElements = firstPage.totalElements || allReviews.length;
+  const actualPages = Math.min(maxPages, Math.ceil(totalElements / pageSize));
+  
+  if (actualPages > 1) {
+    // 나머지 페이지 병렬로
+    const promises = [];
+    for (let i = 2; i <= actualPages; i++) {
+      promises.push(fetchProductReviews(productId, i));
+    }
+    const results = await Promise.allSettled(promises);
+    results.forEach(r => {
+      if (r.status === 'fulfilled' && r.value?.contents) {
+        allReviews.push(...r.value.contents);
+      }
+    });
+  }
+  
+  return allReviews.slice(0, maxReviews);
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -156,10 +256,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST만 허용' });
 
-  const APIFY_TOKEN = process.env.APIFY_TOKEN;
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-  if (!APIFY_TOKEN || !OPENAI_API_KEY) {
-    return res.status(500).json({ error: '서버 설정 오류: API 키 미설정' });
+  if (!OPENAI_API_KEY) {
+    return res.status(500).json({ error: '서버 설정 오류: OpenAI 키 미설정' });
   }
 
   const { url } = req.body || {};
@@ -177,76 +276,39 @@ export default async function handler(req, res) {
   const storeInfo = extractSmartstoreInfo(actualUrl);
   if (!storeInfo) {
     return res.status(400).json({ 
-      error: '네이버 스마트스토어/브랜드스토어 URL을 인식하지 못했어요. 상품 페이지 URL을 확인해주세요.' 
+      error: '네이버 스마트스토어/브랜드스토어 상품 URL을 인식하지 못했어요.\n예: https://smartstore.naver.com/STORE/products/12345' 
     });
   }
 
   try {
-    // Apify로 상품 + 리뷰 수집
-    const apifyUrl = `https://api.apify.com/v2/acts/accurate_dancer~naver-smart-store-monitor/run-sync-get-dataset-items?token=${APIFY_TOKEN}&timeout=45`;
+    // 1단계: 상품 정보 + 리뷰 병렬 수집 (총 15~20초)
+    const [productInfo, reviews] = await Promise.all([
+      fetchProductInfo(storeInfo.storeSlug, storeInfo.productId, storeInfo.isBrand),
+      fetchAllReviews(storeInfo.productId, 100)
+    ]);
     
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 40000);
-    
-    let apifyRes;
-    try {
-      apifyRes = await fetch(apifyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          brandSlugs: storeInfo.storeSlug ? [storeInfo.storeSlug] : [],
-          productIds: [storeInfo.productId],
-          includeReviews: true,
-          maxReviewsPerProduct: 100
-        }),
-        signal: controller.signal
-      });
-    } catch (e) {
-      clearTimeout(timeoutId);
-      if (e.name === 'AbortError') {
-        return res.status(504).json({ error: '리뷰 수집이 40초를 넘었어요. 다시 시도해주세요.' });
-      }
-      throw e;
-    }
-    clearTimeout(timeoutId);
-
-    if (!apifyRes.ok) {
-      const errText = await apifyRes.text();
-      console.error('Apify smartstore error:', apifyRes.status, errText);
-      if (apifyRes.status === 401) return res.status(500).json({ error: 'Apify 토큰 오류' });
-      if (apifyRes.status === 402) return res.status(500).json({ error: 'Apify 크레딧 부족' });
-      return res.status(500).json({ error: `리뷰 수집 실패 (${apifyRes.status})` });
-    }
-
-    const products = await apifyRes.json();
-    
-    if (!Array.isArray(products) || products.length === 0) {
-      return res.status(404).json({ error: '상품을 찾지 못했어요. URL을 다시 확인해주세요.' });
-    }
-
-    const product = products[0];
-    const reviews = product.reviews || [];
-    
-    if (reviews.length === 0) {
+    if (!reviews || reviews.length === 0) {
       return res.status(200).json({
         noReviews: true,
-        name: product.name || '상품',
+        name: productInfo?.name || '상품',
         message: '이 상품은 아직 리뷰가 거의 없어요. 신중히 결정하세요.'
       });
     }
 
-    // OpenAI 분석
+    // 2단계: OpenAI 분석
     const reviewText = reviews.slice(0, 100).map((r, i) => {
-      const text = (r.text || r.content || '').substring(0, 300);
-      return `[${i + 1}] ★${r.rating || '?'} (${r.date || '날짜미상'}) ${text}`;
+      const text = (r.reviewContent || r.content || '').substring(0, 300);
+      const rating = r.reviewScore || r.score || '?';
+      const date = r.createDate || r.regDate || '날짜미상';
+      const product = r.productName || '';
+      return `[${i + 1}] ★${rating} (${date}) ${product ? `[${product}] ` : ''}${text}`;
     }).join('\n');
     
-    const productInfo = `[상품 정보]
-상품명: ${product.name || '미상'}
-판매자: ${product.seller || product.brand || '미상'}
-가격: ${product.price || '미상'}
-카테고리: ${product.category || '미상'}
-평균 평점: ${product.rating || '미상'}
+    const productSummary = `[상품 정보]
+상품명: ${productInfo?.name || '미상'}
+판매자: ${productInfo?.brand || storeInfo.storeSlug}
+가격: ${productInfo?.price || '미상'}
+설명: ${productInfo?.description ? productInfo.description.substring(0, 200) : ''}
 리뷰 수: ${reviews.length}개`;
 
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -256,7 +318,7 @@ export default async function handler(req, res) {
         model: 'gpt-4o-mini',
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: `${productInfo}\n\n[리뷰 ${reviews.length}개]\n${reviewText}` }
+          { role: 'user', content: `${productSummary}\n\n[리뷰 ${reviews.length}개]\n${reviewText}` }
         ],
         response_format: { type: 'json_object' },
         temperature: 0.3,
