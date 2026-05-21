@@ -75,20 +75,20 @@ function detectSite(url) {
     const u = new URL(url);
     const host = u.hostname;
     
-    // 스마트스토어 (먼저 체크 - 더 구체적)
+    // 스마트스토어 - 현재 미지원, 이미지 업로드로 안내
     if (host.includes('smartstore.naver.com') || host.includes('brand.naver.com'))
-      return { id: 'smartstore', name: '스마트스토어', color: '#03c75a', emoji: '🛒', supported: true };
+      return { id: 'smartstore', name: '스마트스토어', color: '#03c75a', emoji: '🛒', supported: false, useImage: true };
     
     // 네이버 플레이스 (장소)
     if (host.includes('naver.com') || host.includes('naver.me')) 
       return { id: 'naver', name: '네이버 플레이스', color: '#03c75a', emoji: '🟢', supported: true };
     
     if (host.includes('yanolja.com')) 
-      return { id: 'yanolja', name: '야놀자', color: '#ff3d6e', emoji: '🛏', supported: false };
+      return { id: 'yanolja', name: '야놀자', color: '#ff3d6e', emoji: '🛏', supported: false, useImage: true };
     if (host.includes('goodchoice.kr')) 
-      return { id: 'goodchoice', name: '여기어때', color: '#ff5e3a', emoji: '🏨', supported: false };
+      return { id: 'goodchoice', name: '여기어때', color: '#ff5e3a', emoji: '🏨', supported: false, useImage: true };
     if (host.includes('airbnb')) 
-      return { id: 'airbnb', name: '에어비앤비', color: '#ff385c', emoji: '🏠', supported: false };
+      return { id: 'airbnb', name: '에어비앤비', color: '#ff385c', emoji: '🏠', supported: false, useImage: true };
     return { id: 'unknown', name: u.hostname, color: C.text, emoji: '🔗', supported: false };
   } catch (e) { return null; }
 }
@@ -706,7 +706,7 @@ function App() {
           {view === 'link-input' && <LinkInputView url={url} setUrl={setUrl} error={error} setError={setError} analyzeUrl={analyzeUrl} setView={setView} />}
           {view === 'image-input' && <ImageInputView mobile={mobile} uploadedImages={uploadedImages} processing={processing} dragActive={dragActive} setDragActive={setDragActive} error={error} galleryInputRef={galleryInputRef} cameraInputRef={cameraInputRef} handleFiles={handleFiles} removeImage={removeImage} analyzeImages={analyzeImages} />}
           {view === 'analyzing' && <AnalyzingView stage={analyzeStage} progress={analyzeProgress} />}
-          {view === 'result' && result && <ResultView result={result} getScoreStyle={getScoreStyle} sevStyle={sevStyle} isSaved={isSaved} toggleSave={toggleSave} goHome={goHome} setView={setView} />}
+          {view === 'result' && result && <ResultView result={result} getScoreStyle={getScoreStyle} sevStyle={sevStyle} isSaved={isSaved} toggleSave={toggleSave} goHome={goHome} setView={setView} setUrl={setUrl} />}
           {view === 'saved' && <SavedView places={savedPlaces} setView={setView} setResult={setResult} getScoreStyle={getScoreStyle} setSavedPlaces={setSavedPlaces} saveSavedList={saveSavedList} />}
           {view === 'compare' && <CompareView places={savedPlaces} setView={setView} getScoreStyle={getScoreStyle} />}
           {view === 'compare-selected' && <CompareView places={savedPlaces} setView={setView} getScoreStyle={getScoreStyle} useSelected={true} />}
@@ -1401,7 +1401,38 @@ function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
         </div>
       )}
 
-      {site && !site.supported && (
+      {site && !site.supported && site.useImage && (
+        <div style={{ padding: '16px 18px', background: C.blueBg, borderRadius: 12, marginBottom: 14, lineHeight: 1.5 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <span style={{ fontSize: 16 }}>📸</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.blue }}>{site.name}는 이미지 분석을 권장해요</span>
+          </div>
+          <div style={{ fontSize: 12, color: C.textMid, marginBottom: 10 }}>
+            {site.id === 'smartstore' 
+              ? '스마트스토어는 직접 크롤링이 차단되어 있어요. 리뷰 화면을 캡처해서 업로드하면 AI가 분석해드려요.'
+              : '리뷰 화면을 캡처해서 업로드하면 AI가 분석해드려요.'}
+          </div>
+          <button onClick={() => setView('image-input')} style={{
+            width: '100%',
+            padding: '10px 14px',
+            background: C.blue,
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6
+          }}>
+            <Camera size={13} /> 리뷰 스크린샷으로 분석
+          </button>
+        </div>
+      )}
+      
+      {site && !site.supported && !site.useImage && (
         <div style={{ padding: '12px 14px', background: C.bgSubtle, border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 12, color: C.textMid, lineHeight: 1.6, marginBottom: 14 }}>
           {site.name}는 직접 크롤링 미지원. <button onClick={() => setView('image-input')} style={{ color: C.blue, background: 'transparent', border: 'none', padding: 0, fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}>리뷰 캡처 업로드</button>를 이용해주세요.
         </div>
@@ -1582,7 +1613,7 @@ function AnalyzingView({ stage, progress }) {
   );
 }
 
-function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHome, setView }) {
+function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHome, setView, setUrl }) {
   const sc = getScoreStyle(result.safetyScore);
 
   return (
@@ -1727,7 +1758,7 @@ function ResultView({ result, getScoreStyle, sevStyle, isSaved, toggleSave, goHo
           "담아두기"로 여러 곳 한꺼번에 비교 가능.
         </div>
         <button 
-          onClick={() => setView('link-input')} 
+          onClick={() => { setUrl(''); setView('link-input'); }} 
           style={{ 
             width: '100%', padding: '12px 16px', background: '#5b6ee1', color: '#fff', 
             border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, 
