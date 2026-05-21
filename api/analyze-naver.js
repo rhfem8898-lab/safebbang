@@ -217,7 +217,7 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           placeUrls: [{ url: `https://pcmap.place.naver.com/restaurant/${placeId}/review/visitor` }],
-          maxReviews: 60,  // 80 → 60으로 줄여서 속도 ↑
+          maxReviews: 100,  // 60 → 100으로 증가 (95% 성공률 유지)
           sortBy: 'recent',
           includeStats: true
         }),

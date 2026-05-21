@@ -74,8 +74,15 @@ function detectSite(url) {
   try {
     const u = new URL(url);
     const host = u.hostname;
+    
+    // 스마트스토어 (먼저 체크 - 더 구체적)
+    if (host.includes('smartstore.naver.com') || host.includes('brand.naver.com'))
+      return { id: 'smartstore', name: '스마트스토어', color: '#03c75a', emoji: '🛒', supported: true };
+    
+    // 네이버 플레이스 (장소)
     if (host.includes('naver.com') || host.includes('naver.me')) 
       return { id: 'naver', name: '네이버 플레이스', color: '#03c75a', emoji: '🟢', supported: true };
+    
     if (host.includes('yanolja.com')) 
       return { id: 'yanolja', name: '야놀자', color: '#ff3d6e', emoji: '🛏', supported: false };
     if (host.includes('goodchoice.kr')) 
@@ -225,8 +232,12 @@ function App() {
   const [dragActive, setDragActive] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [clipboardHint, setClipboardHint] = useState(null);
-  const [installPrompt, setInstallPrompt] = useState(null);  // PWA 설치 프롬프트
+  const [installPrompt, setInstallPrompt] = useState(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [analysisQueue, setAnalysisQueue] = useState([]);  // 분석 대기 큐
+  const [history, setHistory] = useState([]);              // 분석 기록 (자동 저장)
+  const [queueProcessing, setQueueProcessing] = useState(false);  // 큐 처리 중
+  const [queueProgress, setQueueProgress] = useState({ current: 0, total: 0 });
   const galleryInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
@@ -235,6 +246,14 @@ function App() {
     try {
       const stored = localStorage.getItem('safebbang_saved');
       if (stored) setSavedPlaces(JSON.parse(stored));
+      
+      // 분석 큐 로드
+      const queueData = localStorage.getItem('safebbang_queue');
+      if (queueData) setAnalysisQueue(JSON.parse(queueData));
+      
+      // 분석 기록 로드
+      const historyData = localStorage.getItem('safebbang_history');
+      if (historyData) setHistory(JSON.parse(historyData));
     } catch (e) {}
     
     // PWA 설치 가능 여부 체크
@@ -266,9 +285,9 @@ function App() {
       const found = extractNaverUrl(combined);
       if (found) {
         window.history.replaceState({}, '', '/');
+        // 자동 분석 대신 선택 화면으로
         setUrl(combined);
-        setView('analyzing');
-        autoAnalyze(combined);
+        setView('share-received');
         return () => {
           window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
           window.removeEventListener('appinstalled', handleInstalled);
@@ -332,20 +351,22 @@ function App() {
     }
     
     const site = detectSite(extractedUrl);
-    if (!site || site.id !== 'naver') {
+    if (!site || !site.supported) {
       setView('link-input');
-      setError('네이버 URL만 지원합니다.');
+      setError('지원하지 않는 URL입니다.');
       return;
     }
     
+    const apiEndpoint = site.id === 'smartstore' ? 'analyze-smartstore' : 'analyze-naver';
+    
     setError('');
     setAnalyzeProgress(10);
-    setAnalyzeStage('공유받은 링크 처리 중');
+    setAnalyzeStage(site.id === 'smartstore' ? '스마트스토어 처리 중' : '공유받은 링크 처리 중');
     
     try {
       const stages = [
-        { msg: '네이버 플레이스 접근 중', pct: 20 },
-        { msg: '리뷰 수집 중 (약 30초)', pct: 40 },
+        { msg: site.id === 'smartstore' ? '스마트스토어 접근 중' : '네이버 플레이스 접근 중', pct: 20 },
+        { msg: '리뷰 100개 수집 중', pct: 40 },
         { msg: 'AI가 위험 신호 분석 중', pct: 70 },
         { msg: '결과 정리 중', pct: 90 }
       ];
@@ -356,14 +377,15 @@ function App() {
           setAnalyzeProgress(stages[stageIdx].pct);
           stageIdx++;
         }
-      }, 6000);
+      }, 8000);
       
-      const data = await callAPI('analyze-naver', { url: extractedUrl });
+      const data = await callAPI(apiEndpoint, { url: extractedUrl });
       clearInterval(interval);
       setAnalyzeProgress(100);
       
-      // 분석 성공 시 last_url 저장 (중복 분석 방지)
       try { localStorage.setItem('safebbang_last_url', extractedUrl); } catch (e) {}
+      
+      saveToHistory(data);
       
       await new Promise(r => setTimeout(r, 200));
       setResult(data);
@@ -391,11 +413,153 @@ function App() {
     try { localStorage.setItem('safebbang_saved', JSON.stringify(places)); } catch (e) {}
   };
 
+  // 큐 저장
+  const saveQueue = (queue) => {
+    try { localStorage.setItem('safebbang_queue', JSON.stringify(queue)); } catch (e) {}
+  };
+
+  // 히스토리 저장 (자동, 최대 50개)
+  const saveToHistory = (analysisResult) => {
+    if (!analysisResult || !analysisResult.name) return;
+    
+    try {
+      // 같은 장소 중복 방지: 이름과 sourceUrl 같으면 기존 것 업데이트
+      const newHistoryItem = {
+        ...analysisResult,
+        analyzedAt: Date.now()
+      };
+      
+      const filtered = history.filter(h => 
+        !(h.name === analysisResult.name && h.sourceUrl === analysisResult.sourceUrl)
+      );
+      const newHistory = [newHistoryItem, ...filtered].slice(0, 50);  // 최대 50개
+      setHistory(newHistory);
+      localStorage.setItem('safebbang_history', JSON.stringify(newHistory));
+    } catch (e) { console.error('히스토리 저장 실패', e); }
+  };
+
+  // 큐에 URL 추가
+  const addToQueue = (url, placeName) => {
+    const extractedUrl = extractNaverUrl(url);
+    if (!extractedUrl) return false;
+    
+    // 중복 방지
+    const exists = analysisQueue.some(q => q.url === extractedUrl);
+    if (exists) return false;
+    
+    if (analysisQueue.length >= 10) {
+      alert('큐는 최대 10개까지만 가능해요. 먼저 분석을 실행해주세요.');
+      return false;
+    }
+    
+    const newItem = {
+      id: Date.now(),
+      url: extractedUrl,
+      placeName: placeName || extractPlaceName(url) || '이름 미상',
+      addedAt: Date.now(),
+      status: 'pending'  // pending | analyzing | done | error
+    };
+    
+    const newQueue = [...analysisQueue, newItem];
+    setAnalysisQueue(newQueue);
+    saveQueue(newQueue);
+    return true;
+  };
+
+  // 큐에서 제거
+  const removeFromQueue = (id) => {
+    const newQueue = analysisQueue.filter(q => q.id !== id);
+    setAnalysisQueue(newQueue);
+    saveQueue(newQueue);
+  };
+
+  // 큐 전체 비우기
+  const clearQueue = () => {
+    setAnalysisQueue([]);
+    saveQueue([]);
+  };
+
+  // 큐 일괄 분석 (병렬, 최대 3개씩)
+  const processQueue = async () => {
+    if (analysisQueue.length === 0) return;
+    
+    setQueueProcessing(true);
+    setQueueProgress({ current: 0, total: analysisQueue.length });
+    
+    const results = [];
+    const queueCopy = [...analysisQueue];
+    
+    // 3개씩 병렬 처리
+    const BATCH_SIZE = 3;
+    let completed = 0;
+    
+    for (let i = 0; i < queueCopy.length; i += BATCH_SIZE) {
+      const batch = queueCopy.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (item) => {
+          try {
+            const site = detectSite(item.url);
+            const apiEndpoint = site?.id === 'smartstore' ? 'analyze-smartstore' : 'analyze-naver';
+            const data = await callAPI(apiEndpoint, { url: item.url });
+            return { ...data, _queueItem: item };
+          } catch (e) {
+            return { _queueItem: item, _error: e.message };
+          }
+        })
+      );
+      
+      batchResults.forEach(r => {
+        if (r.status === 'fulfilled') {
+          results.push(r.value);
+          // 히스토리에 즉시 저장
+          if (!r.value._error) saveToHistory(r.value);
+        }
+        completed++;
+        setQueueProgress({ current: completed, total: queueCopy.length });
+      });
+    }
+    
+    setQueueProcessing(false);
+    setQueueProgress({ current: 0, total: 0 });
+    
+    // 성공한 결과만 담은 장소로 자동 추가
+    const successResults = results.filter(r => !r._error);
+    if (successResults.length > 0) {
+      const newSaved = [...savedPlaces];
+      successResults.forEach(r => {
+        const exists = newSaved.some(p => p.name === r.name);
+        if (!exists && newSaved.length < 10) {
+          newSaved.push({ ...r, savedAt: Date.now() });
+        }
+      });
+      setSavedPlaces(newSaved);
+      saveSavedList(newSaved);
+    }
+    
+    // 큐 비우기
+    clearQueue();
+    
+    // 결과 화면으로
+    if (successResults.length >= 2) {
+      // 2개 이상이면 비교 화면으로
+      setView('compare');
+    } else if (successResults.length === 1) {
+      // 1개면 결과 화면으로
+      setResult(successResults[0]);
+      setView('result');
+    } else {
+      // 모두 실패
+      alert('분석에 모두 실패했어요. 다시 시도해주세요.');
+      setView('home');
+    }
+    window.scrollTo(0, 0);
+  };
+
   const analyzeUrl = async () => {
     // 텍스트에서 URL 자동 추출
     const extractedUrl = extractNaverUrl(url);
     if (!extractedUrl) {
-      setError('네이버 URL을 찾지 못했어요. 네이버 지도에서 공유한 링크를 붙여넣어주세요.');
+      setError('네이버 URL을 찾지 못했어요. 네이버 지도나 스마트스토어에서 공유한 링크를 붙여넣어주세요.');
       return;
     }
     
@@ -406,7 +570,7 @@ function App() {
     
     const site = detectSite(extractedUrl);
     if (!site) { setError('지원하지 않는 URL입니다.'); return; }
-    if (site.id !== 'naver') {
+    if (!site.supported) {
       setError(`${site.name}는 현재 직접 분석을 지원하지 않아요. 아래 이미지 업로드를 이용해주세요.`);
       return;
     }
@@ -414,13 +578,14 @@ function App() {
     setError('');
     setView('analyzing');
     
+    // 사이트별 API 분기
+    const apiEndpoint = site.id === 'smartstore' ? 'analyze-smartstore' : 'analyze-naver';
+    const stageMessages = site.id === 'smartstore' 
+      ? ['스마트스토어 접근 중', '상품 리뷰 100개 수집 중', 'AI가 구매 위험 분석 중', '결과 정리 중']
+      : ['네이버 플레이스 접근 중', '리뷰 100개 수집 중 (약 30~40초)', 'AI가 위험 신호 분석 중', '결과 정리 중'];
+    
     try {
-      const stages = [
-        { msg: '네이버 플레이스 접근 중', pct: 20 },
-        { msg: '리뷰 수집 중 (약 30초)', pct: 40 },
-        { msg: 'AI가 위험 신호 분석 중', pct: 70 },
-        { msg: '결과 정리 중', pct: 90 }
-      ];
+      const stages = stageMessages.map((msg, i) => ({ msg, pct: 20 + i * 20 }));
       let stageIdx = 0;
       const interval = setInterval(() => {
         if (stageIdx < stages.length) {
@@ -428,12 +593,15 @@ function App() {
           setAnalyzeProgress(stages[stageIdx].pct);
           stageIdx++;
         }
-      }, 6000);
+      }, 8000);
 
-      const data = await callAPI('analyze-naver', { url: extractedUrl });
+      const data = await callAPI(apiEndpoint, { url: extractedUrl });
       clearInterval(interval);
       setAnalyzeProgress(100);
       await new Promise(r => setTimeout(r, 200));
+
+      // 히스토리에 자동 저장
+      saveToHistory(data);
 
       setResult(data);
       setView('result');
@@ -481,7 +649,9 @@ function App() {
       });
       setAnalyzeProgress(100);
       await new Promise(r => setTimeout(r, 200));
-      setResult({ ...data, sourceUrl: null });
+      const resultWithSource = { ...data, sourceUrl: null };
+      saveToHistory(resultWithSource);
+      setResult(resultWithSource);
       setView('result');
       window.scrollTo(0, 0);
     } catch (e) {
@@ -530,22 +700,26 @@ function App() {
   return (
     <div style={{ minHeight: '100vh', background: C.bg }}>
       <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100vh' }}>
-        <Header view={view} goHome={goHome} savedCount={savedPlaces.length} setView={setView} />
+        <Header view={view} goHome={goHome} savedCount={savedPlaces.length} setView={setView} historyCount={history.length} />
         <div style={{ padding: '0 16px 100px' }}>
-          {view === 'home' && <HomeView setView={setView} savedCount={savedPlaces.length} clipboardHint={clipboardHint} acceptClipboard={acceptClipboard} dismissClipboard={dismissClipboard} checkClipboardForUrl={checkClipboardForUrl} installPrompt={installPrompt} installPWA={installPWA} isInstalled={isInstalled} />}
+          {view === 'home' && <HomeView setView={setView} savedCount={savedPlaces.length} clipboardHint={clipboardHint} acceptClipboard={acceptClipboard} dismissClipboard={dismissClipboard} checkClipboardForUrl={checkClipboardForUrl} installPrompt={installPrompt} installPWA={installPWA} isInstalled={isInstalled} queueCount={analysisQueue.length} historyCount={history.length} />}
           {view === 'link-input' && <LinkInputView url={url} setUrl={setUrl} error={error} setError={setError} analyzeUrl={analyzeUrl} setView={setView} />}
           {view === 'image-input' && <ImageInputView mobile={mobile} uploadedImages={uploadedImages} processing={processing} dragActive={dragActive} setDragActive={setDragActive} error={error} galleryInputRef={galleryInputRef} cameraInputRef={cameraInputRef} handleFiles={handleFiles} removeImage={removeImage} analyzeImages={analyzeImages} />}
           {view === 'analyzing' && <AnalyzingView stage={analyzeStage} progress={analyzeProgress} />}
           {view === 'result' && result && <ResultView result={result} getScoreStyle={getScoreStyle} sevStyle={sevStyle} isSaved={isSaved} toggleSave={toggleSave} goHome={goHome} setView={setView} />}
           {view === 'saved' && <SavedView places={savedPlaces} setView={setView} setResult={setResult} getScoreStyle={getScoreStyle} setSavedPlaces={setSavedPlaces} saveSavedList={saveSavedList} />}
           {view === 'compare' && <CompareView places={savedPlaces} setView={setView} getScoreStyle={getScoreStyle} />}
+          {view === 'compare-selected' && <CompareView places={savedPlaces} setView={setView} getScoreStyle={getScoreStyle} useSelected={true} />}
+          {view === 'share-received' && <ShareReceivedView url={url} addToQueue={addToQueue} setView={setView} autoAnalyze={autoAnalyze} setAnalyzeStage={setAnalyzeStage} setAnalyzeProgress={setAnalyzeProgress} queueCount={analysisQueue.length} />}
+          {view === 'queue' && <QueueView queue={analysisQueue} removeFromQueue={removeFromQueue} clearQueue={clearQueue} processQueue={processQueue} setView={setView} queueProcessing={queueProcessing} queueProgress={queueProgress} />}
+          {view === 'history' && <HistoryView history={history} setHistory={setHistory} setResult={setResult} setView={setView} getScoreStyle={getScoreStyle} />}
         </div>
       </div>
     </div>
   );
 }
 
-function Header({ view, goHome, savedCount, setView }) {
+function Header({ view, goHome, savedCount, setView, historyCount }) {
   return (
     <div style={{ 
       position: 'sticky', 
@@ -563,21 +737,38 @@ function Header({ view, goHome, savedCount, setView }) {
         <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.025em', color: C.text }}>안전빵</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        {historyCount > 0 && (
+          <button onClick={() => setView('history')} style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 4, 
+            padding: '8px 12px', 
+            background: C.bgSubtle, 
+            color: C.textMid, 
+            border: 'none', 
+            borderRadius: 100, 
+            fontSize: 12, 
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}>
+            📋 기록 {historyCount}
+          </button>
+        )}
         {savedCount > 0 && (
           <button onClick={() => setView('saved')} style={{ 
             display: 'flex', 
             alignItems: 'center', 
-            gap: 6, 
-            padding: '8px 14px', 
+            gap: 4, 
+            padding: '8px 12px', 
             background: C.blueBg, 
             color: C.blue, 
             border: 'none', 
             borderRadius: 100, 
-            fontSize: 13, 
+            fontSize: 12, 
             fontWeight: 700,
             cursor: 'pointer'
           }}>
-            <Bookmark size={13} fill="currentColor" /><span>{savedCount}</span>
+            <Bookmark size={11} fill="currentColor" />{savedCount}
           </button>
         )}
       </div>
@@ -585,7 +776,7 @@ function Header({ view, goHome, savedCount, setView }) {
   );
 }
 
-function HomeView({ setView, savedCount, clipboardHint, acceptClipboard, dismissClipboard, checkClipboardForUrl, installPrompt, installPWA, isInstalled }) {
+function HomeView({ setView, savedCount, clipboardHint, acceptClipboard, dismissClipboard, checkClipboardForUrl, installPrompt, installPWA, isInstalled, queueCount, historyCount }) {
   return (
     <div style={{ padding: '24px 0 0' }}>
       {/* 메인 비주얼: 떠있는 빵 */}
@@ -711,6 +902,54 @@ function HomeView({ setView, savedCount, clipboardHint, acceptClipboard, dismiss
         </div>
       )}
 
+      {/* 분석 대기 큐 카드 */}
+      {queueCount > 0 && (
+        <button onClick={() => setView('queue')} style={{
+          width: '100%',
+          padding: '18px 20px',
+          background: 'linear-gradient(135deg, #fff5e6 0%, #ffe9c7 100%)',
+          color: C.text,
+          border: '2px solid #fcd34d',
+          borderRadius: 14,
+          marginBottom: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          textAlign: 'left',
+          cursor: 'pointer',
+          animation: 'pulse-soft 2s ease-in-out infinite'
+        }}>
+          <style>{`
+            @keyframes pulse-soft {
+              0%, 100% { box-shadow: 0 0 0 0 rgba(252, 211, 77, 0.3); }
+              50% { box-shadow: 0 0 0 8px rgba(252, 211, 77, 0); }
+            }
+          `}</style>
+          <div style={{ 
+            width: 44, 
+            height: 44, 
+            borderRadius: 12, 
+            background: '#fff', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            flexShrink: 0,
+            fontSize: 22
+          }}>
+            📥
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2, color: '#78350f' }}>
+              분석 대기 {queueCount}개
+            </div>
+            <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.4 }}>
+              지금 일괄 분석하고 한 번에 비교
+            </div>
+          </div>
+          <ChevronRight size={20} color="#78350f" />
+        </button>
+      )}
+
       <button onClick={() => setView('link-input')} style={{ 
         width: '100%', 
         padding: '18px 20px', 
@@ -743,7 +982,7 @@ function HomeView({ setView, savedCount, clipboardHint, acceptClipboard, dismiss
             네이버 링크로 분석
           </div>
           <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
-            식당·카페·미용실·병원 등
+            식당·미용실·병원 + 스마트스토어
           </div>
         </div>
         <ChevronRight size={20} />
@@ -1184,7 +1423,7 @@ function LinkInputView({ url, setUrl, error, setError, analyzeUrl, setView }) {
       </button>
 
       <p style={{ fontSize: 11, color: C.textLight, marginTop: 12, textAlign: 'center', lineHeight: 1.5 }}>
-        리뷰 60개 수집 + AI 분석 · 약 30~50초
+        리뷰 100개 수집 + AI 분석 · 약 40~55초
       </p>
     </div>
   );
@@ -2168,53 +2407,872 @@ function PersonalScenario({ result }) {
   );
 }
 
+// 공유받은 직후 - 지금 분석 vs 큐에 담기 선택
+function ShareReceivedView({ url, addToQueue, setView, autoAnalyze, setAnalyzeStage, setAnalyzeProgress, queueCount }) {
+  const extractedUrl = extractNaverUrl(url);
+  const placeName = extractPlaceName(url) || '이름 미상';
+  const [adding, setAdding] = useState(false);
+  
+  const handleAddToQueue = () => {
+    setAdding(true);
+    const success = addToQueue(url, placeName);
+    if (success) {
+      // 1.5초 후 자동으로 안내 + 홈으로
+      setTimeout(() => {
+        setView('home');
+      }, 1500);
+    } else {
+      setAdding(false);
+    }
+  };
+  
+  const handleAnalyzeNow = () => {
+    setView('analyzing');
+    setAnalyzeStage('공유받은 링크 처리 중');
+    setAnalyzeProgress(10);
+    autoAnalyze(url);
+  };
+  
+  if (adding) {
+    return (
+      <div style={{ padding: '60px 0', textAlign: 'center' }}>
+        <div style={{ fontSize: 64, marginBottom: 20 }}>📥</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 8, letterSpacing: '-0.02em' }}>
+          큐에 담겼어요!
+        </div>
+        <div style={{ fontSize: 14, color: C.textMid, lineHeight: 1.6, marginBottom: 24 }}>
+          이제 네이버로 돌아가서<br />다른 곳도 둘러보세요
+        </div>
+        <div style={{ 
+          display: 'inline-block', 
+          padding: '8px 16px', 
+          background: C.blueBg, 
+          color: C.blue, 
+          borderRadius: 100, 
+          fontSize: 13, 
+          fontWeight: 700 
+        }}>
+          대기 중 {queueCount + 1}개
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div style={{ padding: '24px 0' }}>
+      <div style={{ 
+        padding: '20px 22px', 
+        background: C.bgSubtle, 
+        borderRadius: 16, 
+        marginBottom: 24,
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.textMid, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          공유받은 장소
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: C.text, letterSpacing: '-0.02em' }}>
+          📍 {placeName}
+        </div>
+      </div>
+      
+      <h2 style={{ 
+        fontSize: 22, 
+        fontWeight: 700, 
+        color: C.text, 
+        margin: '0 0 8px', 
+        letterSpacing: '-0.025em',
+        textAlign: 'center'
+      }}>
+        어떻게 분석할까요?
+      </h2>
+      <p style={{ 
+        fontSize: 13, 
+        color: C.textMid, 
+        margin: '0 0 28px', 
+        lineHeight: 1.5, 
+        textAlign: 'center' 
+      }}>
+        한 곳만 빠르게? 여러 곳 모아서?
+      </p>
+      
+      {/* 옵션 1: 지금 바로 분석 */}
+      <button onClick={handleAnalyzeNow} style={{
+        width: '100%',
+        padding: '20px 20px',
+        background: C.blue,
+        color: '#fff',
+        border: 'none',
+        borderRadius: 14,
+        marginBottom: 12,
+        textAlign: 'left',
+        cursor: 'pointer',
+        boxShadow: '0 4px 12px rgba(49, 130, 246, 0.25)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ 
+            width: 44, 
+            height: 44, 
+            borderRadius: 12, 
+            background: 'rgba(255,255,255,0.18)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            flexShrink: 0,
+            fontSize: 22
+          }}>
+            ⚡
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3, letterSpacing: '-0.015em' }}>
+              지금 바로 분석
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.9, lineHeight: 1.4 }}>
+              30초 후 결과 확인
+            </div>
+          </div>
+          <ChevronRight size={20} />
+        </div>
+      </button>
+      
+      {/* 옵션 2: 큐에 담기 */}
+      <button onClick={handleAddToQueue} style={{
+        width: '100%',
+        padding: '20px 20px',
+        background: '#fff5e6',
+        color: C.text,
+        border: '2px solid #fcd34d',
+        borderRadius: 14,
+        marginBottom: 16,
+        textAlign: 'left',
+        cursor: 'pointer'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ 
+            width: 44, 
+            height: 44, 
+            borderRadius: 12, 
+            background: '#fff', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            flexShrink: 0,
+            fontSize: 22
+          }}>
+            📥
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 3, color: '#78350f', letterSpacing: '-0.015em' }}>
+              큐에 담기 {queueCount > 0 && `(현재 ${queueCount}개)`}
+            </div>
+            <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.4 }}>
+              여러 곳 모아서 한 번에 비교
+            </div>
+          </div>
+          <ChevronRight size={20} color="#78350f" />
+        </div>
+      </button>
+      
+      <button onClick={() => setView('home')} style={{
+        width: '100%',
+        padding: '12px 14px',
+        background: 'transparent',
+        color: C.textLight,
+        border: 'none',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: 'pointer'
+      }}>
+        취소
+      </button>
+    </div>
+  );
+}
+
+// 큐 화면 - 대기 항목 보기 + 일괄 분석
+function QueueView({ queue, removeFromQueue, clearQueue, processQueue, setView, queueProcessing, queueProgress }) {
+  if (queueProcessing) {
+    return (
+      <div style={{ padding: '60px 0', textAlign: 'center' }}>
+        <div style={{ marginBottom: 24 }}>
+          <Spinner size={36} />
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 6, letterSpacing: '-0.02em' }}>
+          일괄 분석 중...
+        </div>
+        <div style={{ fontSize: 14, color: C.textMid, lineHeight: 1.5, marginBottom: 28 }}>
+          {queueProgress.current}/{queueProgress.total} 완료
+        </div>
+        
+        <div style={{ width: '100%', height: 8, background: C.bgSubtle, borderRadius: 4, overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ 
+            width: `${(queueProgress.current / queueProgress.total) * 100}%`, 
+            height: '100%', 
+            background: C.blue, 
+            transition: 'width 0.5s ease' 
+          }} />
+        </div>
+        
+        <div style={{ fontSize: 12, color: C.textLight, marginTop: 20 }}>
+          ⚠️ 화면을 닫지 마세요
+        </div>
+      </div>
+    );
+  }
+  
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: C.text, margin: '0 0 6px', letterSpacing: '-0.025em' }}>
+          분석 대기 큐
+        </h1>
+        <p style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5, margin: 0 }}>
+          {queue.length === 0 ? '대기 중인 항목이 없어요' : `${queue.length}개 대기 중 · 한 번에 분석하고 비교`}
+        </p>
+      </div>
+      
+      {queue.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
+          <p style={{ fontSize: 14, color: C.textMid, lineHeight: 1.7, marginBottom: 24 }}>
+            네이버에서 공유받을 때<br />"큐에 담기"를 선택해보세요
+          </p>
+          <button onClick={() => setView('home')} style={{ 
+            padding: '12px 20px', 
+            background: C.blue, 
+            color: '#fff', 
+            border: 'none', 
+            borderRadius: 10, 
+            fontSize: 14, 
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}>
+            홈으로
+          </button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+            {queue.map((item, idx) => (
+              <div key={item.id} style={{
+                padding: '14px 16px',
+                background: C.bgSubtle,
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12
+              }}>
+                <div style={{ 
+                  width: 28, 
+                  height: 28, 
+                  borderRadius: 8, 
+                  background: '#fff', 
+                  color: C.textMid, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: 12, 
+                  fontWeight: 700, 
+                  flexShrink: 0 
+                }}>
+                  {idx + 1}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ 
+                    fontSize: 14, 
+                    fontWeight: 600, 
+                    color: C.text, 
+                    marginBottom: 2,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {item.placeName}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.textLight }}>
+                    {timeAgo(item.addedAt)}
+                  </div>
+                </div>
+                <button onClick={() => removeFromQueue(item.id)} style={{ 
+                  width: 28, 
+                  height: 28, 
+                  padding: 0,
+                  background: 'transparent', 
+                  border: 'none', 
+                  color: C.textLight, 
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 6
+                }}>
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+          
+          {/* 안내 */}
+          <div style={{ 
+            padding: '12px 14px', 
+            background: C.blueBg, 
+            borderRadius: 10, 
+            fontSize: 12, 
+            color: C.blue, 
+            lineHeight: 1.6, 
+            marginBottom: 16, 
+            fontWeight: 500 
+          }}>
+            💡 분석은 약 {Math.ceil(queue.length / 3) * 40}초 걸려요 (3개씩 병렬 처리)
+          </div>
+          
+          {/* 일괄 분석 버튼 */}
+          <button onClick={processQueue} style={{
+            width: '100%',
+            padding: '16px 20px',
+            background: C.blue,
+            color: '#fff',
+            border: 'none',
+            borderRadius: 12,
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: 'pointer',
+            marginBottom: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            boxShadow: '0 4px 12px rgba(49, 130, 246, 0.25)'
+          }}>
+            <Sparkles size={16} fill="#fff" />
+            {queue.length}개 일괄 분석 + 자동 비교
+          </button>
+          
+          <button onClick={() => { 
+            if (confirm('큐를 비울까요?')) clearQueue(); 
+          }} style={{
+            width: '100%',
+            padding: '12px 16px',
+            background: 'transparent',
+            color: C.textMid,
+            border: `1px solid ${C.border}`,
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer'
+          }}>
+            전체 비우기
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// 분석 기록 화면
+function HistoryView({ history, setHistory, setResult, setView, getScoreStyle }) {
+  // 날짜별 그룹
+  const grouped = useMemo(() => {
+    const groups = { '오늘': [], '어제': [], '이번 주': [], '이전': [] };
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    
+    history.forEach(item => {
+      const diff = now - (item.analyzedAt || 0);
+      if (diff < oneDay) groups['오늘'].push(item);
+      else if (diff < 2 * oneDay) groups['어제'].push(item);
+      else if (diff < 7 * oneDay) groups['이번 주'].push(item);
+      else groups['이전'].push(item);
+    });
+    
+    return groups;
+  }, [history]);
+  
+  const viewItem = (item) => {
+    setResult(item);
+    setView('result');
+    window.scrollTo(0, 0);
+  };
+  
+  const removeItem = (idx) => {
+    if (!confirm('이 분석 기록을 삭제할까요?')) return;
+    const newHistory = history.filter((_, i) => i !== idx);
+    setHistory(newHistory);
+    try { localStorage.setItem('safebbang_history', JSON.stringify(newHistory)); } catch (e) {}
+  };
+  
+  const clearAll = () => {
+    if (!confirm('모든 분석 기록을 삭제할까요?')) return;
+    setHistory([]);
+    try { localStorage.setItem('safebbang_history', JSON.stringify([])); } catch (e) {}
+  };
+  
+  return (
+    <div style={{ padding: '20px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: C.text, margin: '0 0 6px', letterSpacing: '-0.025em' }}>
+            분석 기록
+          </h1>
+          <p style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5, margin: 0 }}>
+            {history.length === 0 ? '아직 분석한 적이 없어요' : `${history.length}개 (최대 50개)`}
+          </p>
+        </div>
+        {history.length > 0 && (
+          <button onClick={clearAll} style={{
+            padding: '6px 12px',
+            background: 'transparent',
+            color: C.textLight,
+            border: `1px solid ${C.border}`,
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 500,
+            cursor: 'pointer'
+          }}>
+            전체 삭제
+          </button>
+        )}
+      </div>
+      
+      {history.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+          <p style={{ fontSize: 14, color: C.textMid, lineHeight: 1.7, marginBottom: 24 }}>
+            분석한 결과가 자동으로 여기 저장돼요<br />언제든 다시 확인할 수 있어요
+          </p>
+          <button onClick={() => setView('home')} style={{ 
+            padding: '12px 20px', 
+            background: C.blue, 
+            color: '#fff', 
+            border: 'none', 
+            borderRadius: 10, 
+            fontSize: 14, 
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}>
+            지금 분석하기
+          </button>
+        </div>
+      ) : (
+        <>
+          {Object.entries(grouped).map(([groupName, items]) => 
+            items.length > 0 && (
+              <div key={groupName} style={{ marginBottom: 28 }}>
+                <div style={{ 
+                  fontSize: 11, 
+                  fontWeight: 700, 
+                  color: C.textMid, 
+                  marginBottom: 10, 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.05em' 
+                }}>
+                  {groupName} ({items.length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {items.map((item, i) => {
+                    const realIdx = history.findIndex(h => h.analyzedAt === item.analyzedAt && h.name === item.name);
+                    const sc = getScoreStyle(item.safetyScore || 50);
+                    const isStale = (Date.now() - (item.analyzedAt || 0)) > 7 * 24 * 60 * 60 * 1000;
+                    
+                    return (
+                      <div key={`${groupName}-${i}`} style={{
+                        padding: '14px 16px',
+                        background: C.bgSubtle,
+                        borderRadius: 12,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        cursor: 'pointer',
+                        opacity: isStale ? 0.7 : 1
+                      }} onClick={() => viewItem(item)}>
+                        <div style={{ 
+                          width: 44, 
+                          height: 44, 
+                          borderRadius: 12, 
+                          background: sc.bg, 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          flexShrink: 0,
+                          fontSize: 20
+                        }}>
+                          {item.emoji || '📍'}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                            <div style={{ 
+                              fontSize: 14, 
+                              fontWeight: 700, 
+                              color: C.text,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              flex: 1
+                            }}>
+                              {item.name}
+                            </div>
+                            {item.categoryLabel && (
+                              <span style={{ 
+                                fontSize: 10, 
+                                color: C.textMid, 
+                                background: '#fff', 
+                                padding: '1px 6px', 
+                                borderRadius: 4, 
+                                flexShrink: 0,
+                                fontWeight: 600
+                              }}>
+                                {item.categoryLabel}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+                            <span style={{ color: sc.color, fontWeight: 700 }}>
+                              {sc.emoji} {item.safetyScore}점
+                            </span>
+                            <span style={{ color: C.textLight }}>
+                              {timeAgo(item.analyzedAt)}
+                            </span>
+                            {isStale && (
+                              <span style={{ color: C.orange, fontWeight: 600 }}>
+                                · 7일 경과
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={(e) => { e.stopPropagation(); removeItem(realIdx); }} style={{ 
+                          width: 28, 
+                          height: 28, 
+                          padding: 0,
+                          background: 'transparent', 
+                          border: 'none', 
+                          color: C.textLight, 
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 6,
+                          flexShrink: 0
+                        }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// 시간 표시 헬퍼 (몇 분 전, 몇 시간 전 등)
+function timeAgo(timestamp) {
+  if (!timestamp) return '';
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / (1000 * 60));
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  
+  if (minutes < 1) return '방금';
+  if (minutes < 60) return `${minutes}분 전`;
+  if (hours < 24) return `${hours}시간 전`;
+  if (days < 7) return `${days}일 전`;
+  
+  const d = new Date(timestamp);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 function SavedView({ places, setView, setResult, getScoreStyle, setSavedPlaces, saveSavedList }) {
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  
   const removePlace = (idx) => {
     if (!confirm(`"${places[idx].name}" 삭제?`)) return;
     const newList = places.filter((_, i) => i !== idx);
     setSavedPlaces(newList);
     saveSavedList(newList);
+    const newSelected = new Set(selected);
+    newSelected.delete(idx);
+    setSelected(newSelected);
   };
+  
+  const toggleSelect = (idx) => {
+    const newSelected = new Set(selected);
+    if (newSelected.has(idx)) newSelected.delete(idx);
+    else {
+      if (newSelected.size >= 5) {
+        alert('최대 5개까지 비교 가능해요');
+        return;
+      }
+      newSelected.add(idx);
+    }
+    setSelected(newSelected);
+  };
+  
+  const startSelectMode = () => {
+    setSelectMode(true);
+    setSelected(new Set());
+  };
+  
+  const cancelSelectMode = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
+  
+  const compareSelected = () => {
+    if (selected.size < 2) {
+      alert('비교하려면 최소 2개 선택해주세요');
+      return;
+    }
+    const selectedPlaces = Array.from(selected).map(idx => places[idx]);
+    // CompareView가 places prop을 받으니까 임시로 selectedPlaces를 sessionStorage에 저장
+    try {
+      sessionStorage.setItem('safebbang_compare_places', JSON.stringify(selectedPlaces));
+    } catch (e) {}
+    setView('compare-selected');
+  };
+  
+  const selectAll = () => {
+    setSelected(new Set(places.map((_, i) => i).slice(0, 5)));
+  };
+  
   return (
     <div style={{ padding: '20px 0 0' }}>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: C.text, margin: '0 0 6px', letterSpacing: '-0.02em' }}>담은 장소</h1>
-      <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 20px', lineHeight: 1.6 }}>
-        {places.length === 0 ? '아직 담은 곳이 없어요' : `${places.length}개`}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700, color: C.text, margin: 0, letterSpacing: '-0.025em' }}>
+          담은 장소
+        </h1>
+        {places.length >= 2 && !selectMode && (
+          <button onClick={startSelectMode} style={{
+            padding: '7px 13px',
+            background: C.blueBg,
+            color: C.blue,
+            border: 'none',
+            borderRadius: 100,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}>
+            ✓ 선택해서 비교
+          </button>
+        )}
+      </div>
+      <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 20px', lineHeight: 1.5 }}>
+        {places.length === 0 ? '아직 담은 곳이 없어요' : `${places.length}개 담겨있음`}
+        {selectMode && selected.size > 0 && ` · ${selected.size}개 선택됨`}
       </p>
+      
       {places.length === 0 && (
         <div style={{ textAlign: 'center', padding: '60px 20px' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📭</div>
           <p style={{ fontSize: 14, color: C.textMid, lineHeight: 1.7, marginBottom: 20 }}>
             분석 후 "안전빵에 담아 비교하기"로<br />여러 곳을 모아 비교할 수 있어요.
           </p>
-          <button onClick={() => setView('link-input')} style={{ padding: '10px 16px', background: C.text, color: C.bg, border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+          <button onClick={() => setView('link-input')} style={{ 
+            padding: '12px 20px', 
+            background: C.blue, 
+            color: '#fff', 
+            border: 'none', 
+            borderRadius: 10, 
+            fontSize: 14, 
+            fontWeight: 700,
+            cursor: 'pointer'
+          }}>
             지금 분석하기
           </button>
         </div>
       )}
-      {places.length >= 2 && (
-        <button onClick={() => setView('compare')} style={{ width: '100%', padding: '14px', marginBottom: 16, background: C.text, color: C.bg, border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-          <BarChart size={15} /> AI로 {places.length}곳 비교 분석
+      
+      {/* 선택 모드 액션 바 */}
+      {selectMode && places.length >= 2 && (
+        <div style={{
+          position: 'sticky',
+          top: 60,
+          zIndex: 40,
+          padding: '12px 14px',
+          background: C.blueBg,
+          borderRadius: 12,
+          marginBottom: 16,
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center'
+        }}>
+          <button onClick={selectAll} style={{
+            padding: '7px 12px',
+            background: '#fff',
+            color: C.blue,
+            border: 'none',
+            borderRadius: 7,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}>
+            전체 선택
+          </button>
+          <button onClick={cancelSelectMode} style={{
+            padding: '7px 12px',
+            background: 'transparent',
+            color: C.textMid,
+            border: `1px solid ${C.border}`,
+            borderRadius: 7,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}>
+            취소
+          </button>
+          <button 
+            onClick={compareSelected}
+            disabled={selected.size < 2}
+            style={{
+              flex: 1,
+              padding: '9px 14px',
+              background: selected.size >= 2 ? C.blue : C.border,
+              color: selected.size >= 2 ? '#fff' : C.textLight,
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: selected.size >= 2 ? 'pointer' : 'default',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 5
+            }}
+          >
+            <BarChart size={13} />
+            {selected.size >= 2 ? `${selected.size}개 비교 분석` : '2개 이상 선택'}
+          </button>
+        </div>
+      )}
+      
+      {/* 비선택 모드: 전체 비교 버튼 */}
+      {!selectMode && places.length >= 2 && (
+        <button 
+          onClick={() => setView('compare')} 
+          style={{ 
+            width: '100%', 
+            padding: '14px', 
+            marginBottom: 16, 
+            background: C.blue, 
+            color: '#fff', 
+            border: 'none', 
+            borderRadius: 12, 
+            fontSize: 14, 
+            fontWeight: 700, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            gap: 6,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(49, 130, 246, 0.2)'
+          }}
+        >
+          <BarChart size={15} /> {places.length}개 전체 비교 분석
         </button>
       )}
+      
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {places.map((p, i) => {
           const sc = getScoreStyle(p.safetyScore);
+          const isSelected = selected.has(i);
+          
           return (
-            <div key={i} style={{ padding: 14, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10 }}>
+            <div 
+              key={i} 
+              onClick={selectMode ? () => toggleSelect(i) : undefined}
+              style={{ 
+                padding: 14, 
+                background: selectMode && isSelected ? C.blueBg : C.bg, 
+                border: `${selectMode && isSelected ? 2 : 1}px solid ${selectMode && isSelected ? C.blue : C.border}`, 
+                borderRadius: 12,
+                cursor: selectMode ? 'pointer' : 'default',
+                transition: 'all 0.2s'
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
+                {/* 체크박스 (선택 모드에서만) */}
+                {selectMode && (
+                  <div style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 6,
+                    border: `2px solid ${isSelected ? C.blue : C.borderStrong}`,
+                    background: isSelected ? C.blue : '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    marginTop: 2
+                  }}>
+                    {isSelected && <Check size={14} color="#fff" strokeWidth={3} />}
+                  </div>
+                )}
                 <span style={{ fontSize: 24 }}>{p.emoji || '📍'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: C.text, marginBottom: 2 }}>{p.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{p.name}</div>
+                    {p.categoryLabel && (
+                      <span style={{ 
+                        fontSize: 10, 
+                        color: C.textMid, 
+                        background: C.bgSubtle, 
+                        padding: '1px 6px', 
+                        borderRadius: 4, 
+                        fontWeight: 600 
+                      }}>
+                        {p.categoryLabel}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 11, color: C.textLight }}>{p.location}</div>
                 </div>
-                <div style={{ padding: '3px 9px', background: sc.bg, color: sc.color, borderRadius: 4, fontSize: 13, fontWeight: 700 }}>{p.safetyScore}</div>
+                <div style={{ 
+                  padding: '4px 10px', 
+                  background: sc.bg, 
+                  color: sc.color, 
+                  borderRadius: 6, 
+                  fontSize: 13, 
+                  fontWeight: 700,
+                  flexShrink: 0
+                }}>
+                  {p.safetyScore}
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5, marginBottom: 10 }}>{p.oneLineSummary}</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => { setResult(p); setView('result'); }} style={{ flex: 1, padding: '7px 10px', background: C.bgSubtle, color: C.text, border: `1px solid ${C.border}`, borderRadius: 5, fontSize: 12, fontWeight: 500 }}>자세히</button>
-                <button onClick={() => removePlace(i)} style={{ padding: '7px 10px', background: C.bg, color: C.red, border: `1px solid ${C.redBg}`, borderRadius: 5, fontSize: 12, fontWeight: 500 }}>삭제</button>
+              <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5, marginBottom: selectMode ? 0 : 10 }}>
+                {p.oneLineSummary}
               </div>
+              {!selectMode && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => { setResult(p); setView('result'); }} style={{ 
+                    flex: 1, 
+                    padding: '8px 10px', 
+                    background: C.bgSubtle, 
+                    color: C.text, 
+                    border: 'none', 
+                    borderRadius: 7, 
+                    fontSize: 12, 
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}>
+                    자세히
+                  </button>
+                  <button onClick={() => removePlace(i)} style={{ 
+                    padding: '8px 12px', 
+                    background: 'transparent', 
+                    color: C.textLight, 
+                    border: `1px solid ${C.border}`, 
+                    borderRadius: 7, 
+                    fontSize: 12, 
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}>
+                    삭제
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -2223,16 +3281,27 @@ function SavedView({ places, setView, setResult, getScoreStyle, setSavedPlaces, 
   );
 }
 
-function CompareView({ places, setView, getScoreStyle }) {
+function CompareView({ places, setView, getScoreStyle, useSelected }) {
   const [comparison, setComparison] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // 선택된 항목만 비교하는 경우 sessionStorage에서 읽기
+  const actualPlaces = useMemo(() => {
+    if (useSelected) {
+      try {
+        const stored = sessionStorage.getItem('safebbang_compare_places');
+        if (stored) return JSON.parse(stored);
+      } catch (e) {}
+    }
+    return places;
+  }, [useSelected, places]);
 
   useEffect(() => { runCompare(); }, []);
 
   const runCompare = async () => {
     setLoading(true);
     try {
-      const data = await callAPI('compare', { places });
+      const data = await callAPI('compare', { places: actualPlaces });
       setComparison(data);
     } catch (e) { alert('실패: ' + e.message); }
     finally { setLoading(false); }
@@ -2243,17 +3312,17 @@ function CompareView({ places, setView, getScoreStyle }) {
       <div style={{ padding: '60px 0', textAlign: 'center' }}>
         <Spinner size={28} />
         <h3 style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: '14px 0 6px' }}>AI 비교 분석 중</h3>
-        <p style={{ fontSize: 13, color: C.textMid }}>{places.length}곳 종합 분석</p>
+        <p style={{ fontSize: 13, color: C.textMid }}>{actualPlaces.length}곳 종합 분석</p>
       </div>
     );
   }
   if (!comparison) return null;
-  const winner = places[comparison.winner];
+  const winner = actualPlaces[comparison.winner];
 
   return (
     <div style={{ padding: '20px 0 0' }}>
       <h1 style={{ fontSize: 26, fontWeight: 700, color: C.text, margin: '0 0 6px', letterSpacing: '-0.02em' }}>AI 비교 분석</h1>
-      <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 20px', lineHeight: 1.6 }}>담은 {places.length}곳 중 가장 안전한 선택</p>
+      <p style={{ fontSize: 13, color: C.textMid, margin: '0 0 20px', lineHeight: 1.6 }}>담은 {actualPlaces.length}곳 중 가장 안전한 선택</p>
       <div style={{ padding: '20px 22px', background: 'linear-gradient(135deg, #ddedea 0%, #d3e8df 100%)', borderRadius: 12, borderLeft: `4px solid ${C.green}`, marginBottom: 24 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: C.green, marginBottom: 8, textTransform: 'uppercase' }}>🏆 AI 추천</div>
         <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 6 }}>{winner?.name}</div>
@@ -2267,7 +3336,7 @@ function CompareView({ places, setView, getScoreStyle }) {
             {Object.entries(comparison.categoryBest).map(([cat, idx]) => (
               <div key={cat} style={{ padding: '11px 12px', background: C.bgSubtle, border: `1px solid ${C.border}`, borderRadius: 7 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: C.textMid, textTransform: 'uppercase', marginBottom: 4 }}>{cat} 1등</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{places[parseInt(idx)]?.name}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{actualPlaces[parseInt(idx)]?.name}</div>
               </div>
             ))}
           </div>
@@ -2275,7 +3344,7 @@ function CompareView({ places, setView, getScoreStyle }) {
       )}
       <h3 style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: '0 0 10px' }}>장소별 분석</h3>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-        {places.map((p, i) => {
+        {actualPlaces.map((p, i) => {
           const sc = getScoreStyle(p.safetyScore);
           const cmp = comparison.comparison.find(c => c.placeIndex === i);
           const isWinner = i === comparison.winner;
