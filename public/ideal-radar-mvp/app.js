@@ -1,6 +1,6 @@
 const app=document.querySelector('#app');
 
-const RADAR_CONFIG={radiusMeters:30,newSpaceMeters:120,signalCooldownKey:'idealRadarSeenSignals'};
+const RADAR_CONFIG={radiusMeters:30,newSpaceMeters:60,signalCooldownKey:'idealRadarSeenSignals'};
 const AXES=['애정표현','연락','관계 거리감','갈등 해결','데이트 스타일','계획 성향'];
 const QUESTIONS=[
  ['애정표현','호감이 생기면 나는?',['먼저 표현한다','천천히 확신을 기다린다']],
@@ -35,7 +35,7 @@ const defaults={
  screen:'welcome',ideal:{gender:'여성',height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함',priority:['face','mood']},
  self:{gender:'여성',height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함'},
  personality:{answers:[],scores:{'애정표현':50,'연락':50,'관계 거리감':50,'갈등 해결':50,'데이트 스타일':50,'계획 성향':50},archetype:'다정한 자유주의자'},
- signal:'',unlocked:[],round:0,roundAnswers:[],tickets:4,lastCoords:null
+ signal:'',unlocked:[],round:0,roundAnswers:[],tickets:4,lastCoords:null,highIdentificationProtection:true
 };
 function deepMerge(base,saved){
  if(Array.isArray(base))return Array.isArray(saved)?saved:base.slice();
@@ -49,6 +49,7 @@ function go(screen,patch={}){state=deepMerge(state,{...patch,screen});save();ren
 function btn(label,action,cls='primary',disabled=false){return `<button class="${cls}" data-action="${action}" ${disabled?'disabled':''}>${label}</button>`}
 function shell(content,step=''){app.innerHTML=`<section class="phone"><header class="top"><div class="brand">이상형 <i>레이더</i></div><div class="step">${step}</div></header><div class="main">${content}</div></section>`;bind()}
 function avatar(model){const female=model.gender==='여성';const hair=model.hair||'';const face=female?'👩':'🧑';const hairMark=hair.includes('웨이브')?'〰':hair.includes('긴')?'⌇':hair.includes('짧')?'˙':'•';return `<div class="avatar-art"><span class="hair-mark">${hairMark}</span><span>${face}</span><small>${model.fashion||''}</small></div>`}
+function demoPartnerSelf(){return {gender:state.ideal.gender,height:state.ideal.height,body:state.ideal.body,face:state.ideal.face,hair:state.ideal.hair,fashion:state.ideal.fashion,mood:state.ideal.mood}}
 function fieldLabel(k){return {height:'키',body:'체형',face:'얼굴/인상',hair:'헤어',fashion:'패션',mood:'분위기'}[k]}
 function render(){
  const s=state.screen;
@@ -59,6 +60,7 @@ function render(){
  if(s==='self')return avatarEditor('self');
  if(s==='ready')return ready();
  if(s==='radar')return radar();
+ if(s==='privacy')return privacyChoice();
  if(s==='signal')return signal();
  if(s==='know')return know();
  if(s==='mutual')return mutual();
@@ -87,13 +89,14 @@ function calculatePersonality(){
 }
 function personalityResult(){calculatePersonality();return shell(`<div class="eyebrow">YOUR CHARACTER</div><h1>${state.personality.archetype}</h1><p>성격은 매칭의 외모 필터에 넣지 않아요. 나중에 상대가 당신의 내면을 알아갈 때 쓰입니다.</p><div class="summary"><div class="personality-avatar">💙</div>${AXES.map(x=>`<div class="axis"><span>${x}</span><div><i style="width:${state.personality.scores[x]}%"></i></div><b>${state.personality.scores[x]}</b></div>`).join('')}</div><div class="spacer"></div>${btn('내 아바타 만들기','to-self')}${btn('다시 진단하기','quiz-reset','ghost')}`,'2 / 3')}
 function ready(){return shell(`<div class="eyebrow">READY</div><h1>준비가 끝났어요.<br>이제 평소처럼 지내세요.</h1><div class="summary"><div class="duo"><div>${avatar(state.ideal)}<b>IDEAL</b></div><em>↔</em><div>${avatar(state.self)}<b>SELF</b></div></div></div><div class="notice">매칭은 A.IDEAL ↔ B.SELF, B.IDEAL ↔ A.SELF를 따로 비교합니다. 외모 조건은 시스템이 발견하고, 내면 궁합은 사용자가 직접 알아가며 판단해요.</div><div class="spacer"></div>${btn('RADAR 켜기','radar')}`)}
-function radar(){return shell(`<div class="eyebrow">RADAR</div><h2>평소처럼 지내세요.<br>레이더가 보고 있어요.</h2><div class="radar-card"><div class="radar-status">● LIVE · ${RADAR_CONFIG.radiusMeters}M</div><div class="radar-mini"><div class="orbit"></div><div class="sweep"></div><div class="heart">💗</div></div><p>정확한 위치, 거리, 주변 인원, 사용자 목록은 표시하지 않아요.</p></div><div class="test-panel"><span>MVP SIGNAL DEMO</span><div class="test-grid"><button data-signal="FIND">💓 FIND</button><button data-signal="FOUND">✨ FOUND</button><button data-signal="MUTUAL">💞 MUTUAL</button></div></div><div class="notice"><b>30m 감지 · 같은 공간 1회</b><br>동일 상대의 반복 신호를 막고, 두 사람이 약 ${RADAR_CONFIG.newSpaceMeters}m 이상 이동해 새로운 공간에서 다시 만나면 다시 신호가 가능하도록 정책값을 상수로 분리해뒀어요.</div><div class="spacer"></div>${btn('위치 권한 확인','location','secondary')}${btn('처음부터 다시','reset','ghost')}`)}
+function radar(){return shell(`<div class="eyebrow">RADAR</div><h2>평소처럼 지내세요.<br>레이더가 보고 있어요.</h2><div class="radar-card"><div class="radar-status">● LIVE · ${RADAR_CONFIG.radiusMeters}M</div><div class="radar-mini"><div class="orbit"></div><div class="sweep"></div><div class="heart">💗</div></div><p>정확한 위치, 거리, 주변 인원, 사용자 목록은 표시하지 않아요.</p></div><div class="test-panel"><span>MVP SIGNAL DEMO</span><div class="test-grid"><button data-signal="FIND">💓 FIND</button><button data-signal="FOUND">✨ FOUND</button><button data-signal="MUTUAL">💞 MUTUAL</button></div></div><div class="test-panel"><span>PRIVACY POLICY DEMO</span><button class="secondary" data-action="privacy-demo">👥 둘만 있는 공간에서 특정 가능성이 높은 경우</button></div><div class="notice"><b>30m 감지 · 같은 공간 1회</b><br>동일 상대의 반복 신호를 막고, 두 사람이 약 ${RADAR_CONFIG.newSpaceMeters}m 이상 이동해 새로운 공간에서 다시 만나면 다시 신호가 가능하도록 임시 정책값을 상수로 분리해뒀어요. 이 ${RADAR_CONFIG.newSpaceMeters}m 값은 최종 확정 정책이 아닙니다.</div><div class="spacer"></div>${btn('위치 권한 확인','location','secondary')}${btn('처음부터 다시','reset','ghost')}`)}
+function privacyChoice(){return shell(`<div class="eyebrow">PRIVACY CHOICE · MVP POLICY</div><h1>지금은 서로를<br>특정하기 쉬운 상황이에요.</h1><p>주변 조건상 사실상 두 사람뿐이라면, 신호 자체가 상대를 강하게 암시할 수 있어요. 이때는 자동으로 한쪽만 막는 대신 사용자가 양방향 정보 흐름을 선택합니다.</p><div class="summary"><b>보호 모드의 원칙</b><p>보호를 선택하면 상대가 내 조건에 맞아도 나는 그 사실을 받지 않고, 내가 상대의 조건에 맞아도 그 사실이 상대에게 전달되지 않아요.</p></div><div class="notice">이 기능의 정확한 감지 조건과 최종 UI는 아직 미확정입니다. 현재 화면은 제품 원칙을 검증하기 위한 MVP 정책 시뮬레이션이에요.</div><div class="spacer"></div>${btn('이번에는 서로 숨기기','privacy-hide','secondary')}${btn('신호 주고받기 허용','privacy-allow')}${btn('레이더로 돌아가기','radar','ghost')}`)}
 function signal(){
  const type=state.signal;const data={FIND:['💓','내 이상형이 주변에 있어요','내 IDEAL에 가까운 SELF를 가진 사람이 30m 안에 감지됐어요.'],FOUND:['✨','누군가가 찾던 모습이 당신이에요','내 SELF가 누군가의 IDEAL 조건에 들어왔어요. 좋아요를 받았다는 뜻은 아니에요.'],MUTUAL:['💞','서로가 서로의 이상형이에요','A.IDEAL ↔ B.SELF와 B.IDEAL ↔ A.SELF가 모두 맞았어요.']}[type];
  return shell(`<div class="signal"><div class="signal-icon">${data[0]}</div><div class="eyebrow">${type}</div><h1>${data[1]}</h1><p>${data[2]}</p><div class="notice">이 단계에서는 실제 사진 · 실명 · 정확한 거리 · 지도 위치 · 주변 인원 · 검색 가능한 프로필을 공개하지 않습니다.</div></div><div class="spacer"></div>${type==='FIND'?btn('내면 조금 알아보기','know'):''}${type==='MUTUAL'?btn('서로 알아가기','mutual'):''}${btn('레이더로 돌아가기','radar','ghost')}`)
 }
 function know(){const items=[['❤️','연애 스타일','마음을 표현할 때 솔직한 편이에요'],['💬','연락 스타일','짧게라도 자주 이어가는 편이에요'],['🫶','관계 성향','함께와 각자의 시간을 균형 있게 봐요'],['🔥','갈등 해결','감정을 정리한 뒤 대화하려 해요'],['🎡','데이트 취향','새로운 장소를 발견하는 걸 좋아해요'],['🌙','생활 패턴','늦은 저녁에 여유를 느껴요']];return shell(`<div class="eyebrow">KNOW</div><h1>외모 다음은,<br>마음을 알아볼 차례예요.</h1><p>처음 2개 카테고리는 무료예요. 상대가 어떤 사람인지 조금씩 알아가세요.</p><div class="cards">${items.map((x,i)=>`<button class="insight ${state.unlocked.length>=2&&!state.unlocked.includes(i)?'locked':''}" data-insight="${i}"><span class="emoji">${x[0]}</span><b>${x[1]}</b><span>${state.unlocked.includes(i)?x[2]:'탭해서 열기'}</span></button>`).join('')}</div><div class="notice">추가 내면 정보는 추후 결제 · 광고 · coin 등 수익화 레이어가 될 수 있어요. 외모 발견은 trigger, 내면 탐색은 engagement입니다.</div><div class="spacer"></div>${btn('MUTUAL 상황 체험','force-mutual','secondary')}${btn('레이더로 돌아가기','radar','ghost')}`)}
-function mutual(){return shell(`<div class="signal"><div class="signal-icon">💞</div><div class="eyebrow">MUTUAL</div><h1>서로가 서로의<br>이상형이에요.</h1><p>바로 사진이나 자유 채팅을 열지 않아요. 먼저 상대가 직접 만든 SELF 아바타와 최소 정보만 공개합니다.</p></div><div class="reveal mini-reveal">${avatar(state.ideal)}<p><strong>20대 중반</strong><br>💙 ${state.personality.archetype}</p></div><div class="notice">실제 사진과 닉네임은 아직 비공개예요. 3 ROUND 동안 서로의 생각을 알아가고 마지막에 둘 다 원할 때만 연결됩니다.</div><div class="spacer"></div>${btn('3 ROUND 시작','start-round')}${btn('지금은 아니에요','radar','ghost')}`)}
+function mutual(){const partner=demoPartnerSelf();return shell(`<div class="signal"><div class="signal-icon">💞</div><div class="eyebrow">MUTUAL</div><h1>서로가 서로의<br>이상형이에요.</h1><p>바로 사진이나 자유 채팅을 열지 않아요. 먼저 상대가 직접 만든 SELF 아바타와 최소 정보만 공개합니다.</p></div><div class="reveal mini-reveal">${avatar(partner)}<p><strong>상대 SELF 아바타 · 20대 중반</strong><br>💙 다정한 자유주의자</p></div><div class="notice">데모에서는 상대 서버 데이터가 없기 때문에 IDEAL과 대응되는 샘플 SELF를 보여줍니다. 실제 서비스에서는 상대가 직접 만든 SELF 아바타와 PERSONALITY archetype을 사용합니다. 실제 사진과 닉네임은 아직 비공개예요.</div><div class="spacer"></div>${btn('3 ROUND 시작','start-round')}${btn('지금은 아니에요','radar','ghost')}`)}
 function round(){const i=state.round,r=ROUNDS[i],mine=state.roundAnswers[i];return shell(`<div class="round-label">ROUND ${i+1} · ${r.label}</div><div class="progress"><span style="width:${((i+1)/3)*100}%"></span></div><h1>${r.q}</h1><p>둘 다 답한 뒤 서로의 선택이 공개되고, 잠깐 대화할 수 있어요.</p><div class="round-card">${r.a.map((x,n)=>`<button class="choice ${mine===n?'selected':''}" data-answer="${n}">${x}</button>`).join('')}${mine!==undefined?`<div class="result-bar"><span>나 · ${mine+1}번</span><span class="${mine===r.other?'same':''}">상대 · ${r.other+1}번</span></div><div class="chat-window"><b>대화 OPEN · 2:30</b><p>${mine===r.other?'같은 답을 골랐네요. 왜 이쪽이 더 좋아요?':'우리는 답이 달랐네요. 서로 이유를 물어보세요.'}</p></div>`:''}</div><div class="spacer"></div>${btn(i===2?'최종 선택으로':'다음 ROUND','round-next','primary',mine===undefined)}`)}
 function decision(){return shell(`<div class="eyebrow">FINAL CHOICE</div><h1>더 알아가고 싶나요?</h1><p>선택은 서로에게 보이지 않게 진행돼요.</p><span class="ticket">🎟 보유 티켓 ${state.tickets}장</span><div class="decision"><button class="yes" data-action="connect">더 알아가고 싶어요 · 🎟2</button><button class="no" data-action="end">여기까지</button></div><div class="notice"><b>YES / YES</b> → 양쪽 각 2장 차감, 실제 프로필 + 자유 채팅 OPEN<br><b>YES / NO</b> → YES 사용자는 1장 반환되어 최종 1장 소비, NO 사용자는 소비 없음</div>`)}
 function connected(){return shell(`<div class="signal"><div class="signal-icon">🎉</div><div class="eyebrow">CONNECT</div><h1>둘 다 같은 선택을 했어요.</h1><p>이 순간 처음으로 실제 프로필과 자유로운 대화가 열립니다.</p><div class="real-profile"><div class="photo-placeholder">PHOTO</div><div><h2>레이더 메이트</h2><p>26세 · 서울<br>“좋은 대화와 느긋한 산책을 좋아해요.”</p></div></div></div><div class="spacer"></div>${btn('자유 채팅 시작','chat')}${btn('레이더로 돌아가기','radar','ghost')}`)}
@@ -111,6 +114,9 @@ function action(a){
  if(a==='quiz-back'){if(state.personality.answers.length){state.personality.answers.pop();save();render()}else go('ideal');return}
  if(a==='quiz-reset'){state.personality.answers=[];save();return go('personality')}
  if(a==='radar')return go('radar');if(a==='know')return go('know');if(a==='mutual'||a==='force-mutual')return go('mutual',{signal:'MUTUAL'});if(a==='start-round')return go('round',{round:0,roundAnswers:[]});
+ if(a==='privacy-demo')return go('privacy');
+ if(a==='privacy-hide'){state.highIdentificationProtection=true;save();alert('보호 모드가 적용됐어요. 이 상황에서는 FIND / FOUND / MUTUAL 신호를 양방향 모두 전달하지 않습니다.');return go('radar')}
+ if(a==='privacy-allow'){state.highIdentificationProtection=false;save();alert('이 상황에서 신호 주고받기를 허용했어요. 일반 privacy 규칙 아래에서만 신호가 표시됩니다.');return go('radar')}
  if(a==='round-next'){if(state.round<2)return go('round',{round:state.round+1});return go('decision')}
  if(a==='connect')return go('connected',{tickets:Math.max(0,state.tickets-2)});if(a==='end'){if(confirm('여기까지 할까요?'))return go('radar')}
  if(a==='chat')return alert('MVP에서는 CONNECT까지 체험할 수 있어요. 실제 자유 채팅은 서버 연동 단계에서 열립니다.');
