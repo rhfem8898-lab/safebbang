@@ -1,117 +1,15 @@
 (() => {
   const AVATAR_TABS=['gender','height','body','face','hair','fashion','mood'];
   const TAB_LABELS={gender:'성별',height:'키',body:'체형',face:'인상',hair:'헤어',fashion:'패션',mood:'분위기'};
-  const TAB_HINTS={
-    gender:'먼저 어떤 사람을 그리고 싶은지 골라주세요.',
-    height:'키는 전체 실루엣의 느낌을 바꿔요.',
-    body:'체형은 어깨와 전체 비율에 반영돼요.',
-    face:'눈매와 얼굴형, 표정의 인상을 골라주세요.',
-    hair:'길이와 실루엣이 캐릭터 분위기를 크게 바꿔요.',
-    fashion:'옷의 실루엣과 무드를 골라주세요.',
-    mood:'마지막으로 캐릭터 전체의 공기를 정해요.'
-  };
-
-  if(!state.avatarTab) state.avatarTab={ideal:'gender',self:'gender'};
-  if(!state.avatarTab.ideal) state.avatarTab.ideal='gender';
-  if(!state.avatarTab.self) state.avatarTab.self='gender';
-  save();
-
-  function slug(value){
-    const map={
-      '여성':'female','남성':'male','상관없음':'any','아담한 편':'petite','평균':'average','큰 편':'tall',
-      '슬림':'slim','보통':'normal','탄탄':'fit','볼륨감':'volume','다정한 인상':'warm','도회적인 인상':'urban',
-      '웃는 인상':'smile','차분한 인상':'calm','짧은 머리':'short','중간 길이':'medium','긴 머리':'long','웨이브':'wave',
-      '캐주얼':'casual','미니멀':'minimal','스트릿':'street','포멀':'formal','편안함':'soft','밝음':'bright','차분함':'quiet','개성 있음':'unique'
-    };
-    return map[value]||'default';
-  }
-
-  avatar=function(model,extraClass=''){
-    const gender=slug(model.gender),height=slug(model.height),body=slug(model.body),face=slug(model.face),hair=slug(model.hair),fashion=slug(model.fashion),mood=slug(model.mood);
-    return `<div class="avatar-art avatar-visual mood-${mood} ${extraClass}" aria-label="${model.gender}, ${model.face}, ${model.hair}, ${model.fashion}">
-      <div class="avatar-aura"></div>
-      <div class="avatar-person gender-${gender} height-${height} body-${body} face-${face} hair-${hair} fashion-${fashion}">
-        <div class="hair-back"></div>
-        <span class="ear ear-left"></span><span class="ear ear-right"></span>
-        <div class="avatar-head">
-          <span class="brow brow-left"></span><span class="brow brow-right"></span>
-          <span class="eye eye-left"></span><span class="eye eye-right"></span>
-          <span class="avatar-nose"></span><span class="avatar-mouth"></span>
-          <span class="avatar-blush blush-left"></span><span class="avatar-blush blush-right"></span>
-        </div>
-        <div class="hair-front"></div>
-        <div class="avatar-neck"></div>
-        <div class="avatar-torso"><span class="fashion-detail detail-left"></span><span class="fashion-detail detail-right"></span><span class="fashion-center"></span></div>
-      </div>
-    </div>`;
-  };
-
+  const TAB_HINTS={gender:'먼저 어떤 사람을 그리고 싶은지 골라주세요.',height:'키가 중요하지 않다면 ‘상관없음’을 골라도 돼요.',body:'체형을 크게 보지 않는다면 매칭 조건에서 빼둘 수 있어요.',face:'눈매와 얼굴형, 표정의 인상을 골라주세요.',hair:'헤어스타일이 중요하지 않다면 ‘상관없음’으로 넘겨도 돼요.',fashion:'평소 끌리는 스타일을 고르거나 조건에서 제외하세요.',mood:'전체적인 분위기를 고르거나 조건에서 제외하세요.'};
+  if(!state.avatarTab) state.avatarTab={ideal:'gender',self:'gender'};if(!state.avatarTab.ideal)state.avatarTab.ideal='gender';if(!state.avatarTab.self)state.avatarTab.self='gender';save();
+  function slug(value){const map={'여성':'female','남성':'male','상관없음':'any','아담한 편':'petite','평균':'average','큰 편':'tall','슬림':'slim','보통':'normal','탄탄':'fit','볼륨감':'volume','다정한 인상':'warm','도회적인 인상':'urban','웃는 인상':'smile','차분한 인상':'calm','짧은 머리':'short','중간 길이':'medium','긴 머리':'long','웨이브':'wave','캐주얼':'casual','미니멀':'minimal','스트릿':'street','포멀':'formal','편안함':'soft','밝음':'bright','차분함':'quiet','개성 있음':'unique'};return map[value]||'default'}
+  function visualValue(model,field){if(model[field]!=='상관없음')return model[field];const fallback={height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함'};return fallback[field]}
+  avatar=function(model,extraClass=''){const gender=slug(model.gender),height=slug(visualValue(model,'height')),body=slug(visualValue(model,'body')),face=slug(visualValue(model,'face')),hair=slug(visualValue(model,'hair')),fashion=slug(visualValue(model,'fashion')),mood=slug(visualValue(model,'mood'));const flexible=['height','body','face','hair','fashion','mood'].filter(k=>model[k]==='상관없음').length;return `<div class="avatar-art avatar-visual mood-${mood} ${extraClass}" aria-label="${model.gender}, ${model.face}, ${model.hair}, ${model.fashion}"><div class="avatar-aura"></div><div class="avatar-person gender-${gender} height-${height} body-${body} face-${face} hair-${hair} fashion-${fashion}"><div class="hair-back"></div><span class="ear ear-left"></span><span class="ear ear-right"></span><div class="avatar-head"><span class="brow brow-left"></span><span class="brow brow-right"></span><span class="eye eye-left"></span><span class="eye eye-right"></span><span class="avatar-nose"></span><span class="avatar-mouth"></span><span class="avatar-blush blush-left"></span><span class="avatar-blush blush-right"></span></div><div class="hair-front"></div><div class="avatar-neck"></div><div class="avatar-torso"><span class="fashion-detail detail-left"></span><span class="fashion-detail detail-right"></span><span class="fashion-center"></span></div></div>${flexible&&extraClass.includes('avatar-main')?`<span class="flexible-badge">${flexible}개 조건 열어둠</span>`:''}</div>`};
   function previewModel(model,field,value){return {...model,[field]:value}}
-
-  function optionButton(kind,field,value,selected,model){
-    const preview=previewModel(model,field,value);
-    return `<button class="builder-choice ${selected?'selected':''}" data-model="${kind}" data-field="${field}" data-value="${value}">
-      <span class="choice-avatar-wrap">${avatar(preview,'avatar-mini')}</span>
-      <span class="choice-label">${value}</span>
-      <span class="choice-check">✓</span>
-    </button>`;
-  }
-
-  function selectedSummary(model,ideal){
-    const items=[['height',model.height],['face',model.face],['hair',model.hair],['fashion',model.fashion]];
-    return items.filter(([,v])=>v).map(([k,v])=>`<span class="${ideal&&state.ideal.priority.includes(k)?'priority-summary':''}">${ideal&&state.ideal.priority.includes(k)?'★ ':''}${v}</span>`).join('');
-  }
-
-  avatarEditor=function(kind){
-    const ideal=kind==='ideal',model=ideal?state.ideal:state.self;
-    const active=state.avatarTab[kind]||'gender';
-    const values=active==='gender'?['여성','남성']:AVATAR_FIELDS[active];
-    const activeIndex=AVATAR_TABS.indexOf(active);
-    const last=activeIndex===AVATAR_TABS.length-1;
-    const priorityAllowed=ideal&&active!=='gender';
-    const priorityOn=ideal&&state.ideal.priority.includes(active);
-    const priorityCount=ideal?state.ideal.priority.length:0;
-    const tabs=AVATAR_TABS.map((tab,i)=>`<button class="builder-tab ${active===tab?'active':''} ${i<activeIndex?'passed':''}" data-action="avatar-tab-${tab}"><span>${i+1}</span>${TAB_LABELS[tab]}</button>`).join('');
-    const options=values.map(v=>optionButton(kind,active,v,model[active]===v,model)).join('');
-    const nextLabel=last?(ideal?'성격 진단하기':'준비 완료'):`다음 · ${TAB_LABELS[AVATAR_TABS[activeIndex+1]]}`;
-    return shell(`
-      <div class="eyebrow">MAKE · ${ideal?'IDEAL':'SELF'}</div>
-      <div class="builder-heading"><div><h1>${ideal?'내 이상형을 그려보세요':'나를 그려보세요'}</h1><p>${ideal?'머릿속에 있는 사람을 눈앞에서 하나씩 완성해요.':'상대의 레이더가 알아볼 수 있도록 내 모습을 같은 방식으로 만들어요.'}</p></div><span class="builder-count">${activeIndex+1}/7</span></div>
-      <div class="avatar-builder-stage ${ideal?'ideal-stage':'self-stage'}">
-        <div class="avatar-stage-label"><span>${ideal?'MY IDEAL':'MY SELF'}</span><b>${model.gender} · ${model.face}</b></div>
-        ${avatar(model,'avatar-main')}
-        <div class="avatar-summary">${selectedSummary(model,ideal)}</div>
-      </div>
-      <div class="builder-tabs" role="tablist">${tabs}</div>
-      <section class="builder-panel">
-        <div class="builder-panel-head"><div><span>STEP ${activeIndex+1}</span><h2>${TAB_LABELS[active]}</h2></div>${priorityAllowed?`<button class="priority-pill ${priorityOn?'on':''}" data-priority="${active}">★ ${priorityOn?'중요하게 봐요':`중요 ${priorityCount}/2`}</button>`:''}</div>
-        <p class="builder-hint">${TAB_HINTS[active]}</p>
-        <div class="builder-choice-grid ${values.length===2?'two':''}">${options}</div>
-        ${priorityAllowed?'<p class="priority-help">특히 중요한 외모 요소는 최대 2개까지 표시할 수 있어요. 매칭할 때 더 큰 가중치를 줄 수 있습니다.</p>':''}
-      </section>
-      <div class="builder-bottom">${btn(nextLabel,last?'avatar-next':'avatar-next-field')}${btn('이전','avatar-prev-field','ghost')}</div>
-    `,ideal?'1 / 3':'3 / 3');
-  };
-
-  const baseAction=action;
-  action=function(a){
-    if(a.startsWith('avatar-tab-')){
-      const field=a.replace('avatar-tab-','');
-      if(!AVATAR_TABS.includes(field))return;
-      const kind=state.screen==='ideal'?'ideal':'self';state.avatarTab[kind]=field;save();render();return;
-    }
-    if(a==='avatar-next-field'||a==='avatar-prev-field'){
-      const kind=state.screen==='ideal'?'ideal':'self';const current=state.avatarTab[kind]||'gender';let i=AVATAR_TABS.indexOf(current);
-      i+=a==='avatar-next-field'?1:-1;
-      if(i<0)return baseAction('back');
-      if(i>=AVATAR_TABS.length)return baseAction('avatar-next');
-      state.avatarTab[kind]=AVATAR_TABS[i];save();render();return;
-    }
-    if(a==='avatar-next'){
-      const kind=state.screen==='ideal'?'ideal':'self';state.avatarTab[kind]='gender';save();return baseAction(a);
-    }
-    return baseAction(a);
-  };
-
+  function optionButton(kind,field,value,selected,model,ideal){if(value==='상관없음'&&ideal)return `<button class="builder-choice flexible-choice ${selected?'selected':''}" data-model="${kind}" data-field="${field}" data-value="${value}"><span class="choice-any">∞</span><span class="choice-label"><b>상관없음</b><small>이 조건은 매칭 점수에서 제외</small></span><span class="choice-check">✓</span></button>`;const preview=previewModel(model,field,value);return `<button class="builder-choice ${selected?'selected':''}" data-model="${kind}" data-field="${field}" data-value="${value}"><span class="choice-avatar-wrap">${avatar(preview,'avatar-mini')}</span><span class="choice-label">${value}</span><span class="choice-check">✓</span></button>`}
+  function selectedSummary(model,ideal){const items=[['height',model.height],['face',model.face],['hair',model.hair],['fashion',model.fashion]];return items.filter(([,v])=>v).map(([k,v])=>`<span class="${v==='상관없음'?'flex-summary':''} ${ideal&&state.ideal.priority.includes(k)?'priority-summary':''}">${v==='상관없음'?'∞ ':ideal&&state.ideal.priority.includes(k)?'★ ':''}${v}</span>`).join('')}
+  avatarEditor=function(kind){const ideal=kind==='ideal',model=ideal?state.ideal:state.self;const active=state.avatarTab[kind]||'gender';const rawValues=active==='gender'?['여성','남성']:AVATAR_FIELDS[active];const values=ideal?rawValues:rawValues.filter(v=>v!=='상관없음');const activeIndex=AVATAR_TABS.indexOf(active),last=activeIndex===AVATAR_TABS.length-1;const priorityAllowed=ideal&&active!=='gender'&&model[active]!=='상관없음';const priorityOn=ideal&&state.ideal.priority.includes(active),priorityCount=ideal?state.ideal.priority.length:0;const tabs=AVATAR_TABS.map((tab,i)=>`<button class="builder-tab ${active===tab?'active':''} ${i<activeIndex?'passed':''}" data-action="avatar-tab-${tab}"><span>${i+1}</span>${TAB_LABELS[tab]}</button>`).join('');const options=values.map(v=>optionButton(kind,active,v,model[active]===v,model,ideal)).join('');const nextLabel=last?(ideal?'성격 진단하기':'준비 완료'):`다음 · ${TAB_LABELS[AVATAR_TABS[activeIndex+1]]}`;return shell(`<div class="eyebrow">MAKE · ${ideal?'IDEAL':'SELF'}</div><div class="builder-heading"><div><h1>${ideal?'내 이상형을 그려보세요':'나를 그려보세요'}</h1><p>${ideal?'중요한 건 선명하게, 중요하지 않은 건 열어두세요. 모든 조건이 똑같아야 발견되는 방식이 아니에요.':'상대의 레이더가 알아볼 수 있도록 내 모습을 같은 방식으로 만들어요.'}</p></div><span class="builder-count">${activeIndex+1}/7</span></div><div class="avatar-builder-stage ${ideal?'ideal-stage':'self-stage'}"><div class="avatar-stage-label"><span>${ideal?'MY IDEAL':'MY SELF'}</span><b>${model.gender} · ${model.face}</b></div>${avatar(model,'avatar-main')}<div class="avatar-summary">${selectedSummary(model,ideal)}</div></div><div class="builder-tabs" role="tablist">${tabs}</div><section class="builder-panel"><div class="builder-panel-head"><div><span>STEP ${activeIndex+1}</span><h2>${TAB_LABELS[active]}</h2></div>${priorityAllowed?`<button class="priority-pill ${priorityOn?'on':''}" data-priority="${active}">★ ${priorityOn?'중요하게 봐요':`중요 ${priorityCount}/2`}</button>`:''}</div><p class="builder-hint">${TAB_HINTS[active]}</p><div class="builder-choice-grid ${values.length===2?'two':''}">${options}</div>${ideal&&active!=='gender'?'<p class="priority-help">★ 최대 2개는 더 중요하게 반영 · ∞ 상관없음은 점수 계산에서 제외</p>':''}</section><div class="builder-bottom">${btn(nextLabel,last?'avatar-next':'avatar-next-field')}${btn('이전','avatar-prev-field','ghost')}</div>`,ideal?'1 / 3':'3 / 3')};
+  const baseAction=action;action=function(a){if(a.startsWith('avatar-tab-')){const field=a.replace('avatar-tab-','');if(!AVATAR_TABS.includes(field))return;const kind=state.screen==='ideal'?'ideal':'self';state.avatarTab[kind]=field;save();render();return}if(a==='avatar-next-field'||a==='avatar-prev-field'){const kind=state.screen==='ideal'?'ideal':'self',current=state.avatarTab[kind]||'gender';let i=AVATAR_TABS.indexOf(current);i+=a==='avatar-next-field'?1:-1;if(i<0)return baseAction('back');if(i>=AVATAR_TABS.length)return baseAction('avatar-next');state.avatarTab[kind]=AVATAR_TABS[i];save();render();return}if(a==='avatar-next'){const kind=state.screen==='ideal'?'ideal':'self';state.avatarTab[kind]='gender';save();return baseAction(a)}return baseAction(a)};
   render();
 })();
