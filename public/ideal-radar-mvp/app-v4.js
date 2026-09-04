@@ -1,53 +1,14 @@
 const app=document.querySelector('#app');
 
-const RADAR_CONFIG={radiusMeters:30,newSpaceMeters:60,signalCooldownKey:'idealRadarSeenSignals'};
+const RADAR_CONFIG={radiusMeters:30,newSpaceMeters:60,signalCooldownKey:'idealRadarSeenSignals',appearanceMatchThreshold:70};
 const AXES=['애정표현','연락','관계 거리감','갈등 해결','데이트 스타일','계획 성향'];
 const QUESTIONS=[
- ['애정표현','호감이 생기면 나는?',['먼저 표현한다','천천히 확신을 기다린다']],
- ['애정표현','기념일에는?',['작게라도 꼭 챙긴다','평소가 더 중요하다']],
- ['애정표현','좋아한다는 말은?',['자주 하는 편','행동으로 보여주는 편']],
- ['연락','연인과 연락은?',['틈날 때마다 자주','각자 리듬을 존중']],
- ['연락','답장이 늦으면?',['조금 신경 쓰인다','바쁘겠거니 한다']],
- ['연락','하루를 마치며?',['짧게라도 통화하고 싶다','메시지만으로도 충분하다']],
- ['관계 거리감','주말 일정은?',['함께 보내고 싶다','각자 시간도 중요하다']],
- ['관계 거리감','친구 모임에 연인을?',['자연스럽게 함께','각자 인간관계 유지']],
- ['관계 거리감','취미가 다르면?',['함께 해보려 한다','각자 즐겨도 좋다']],
- ['갈등 해결','서운한 일이 생기면?',['바로 이야기한다','정리할 시간이 필요하다']],
- ['갈등 해결','다툰 뒤 먼저 연락은?',['먼저 풀려고 한다','감정이 가라앉길 기다린다']],
- ['갈등 해결','의견이 다를 때?',['끝까지 대화한다','일단 서로 인정한다']],
- ['데이트 스타일','쉬는 날 데이트는?',['새로운 곳을 찾아간다','익숙한 곳이 편하다']],
- ['데이트 스타일','여행은?',['여기저기 많이 본다','한곳에서 여유롭게']],
- ['데이트 스타일','데이트 비용은?',['경험에 아끼지 않는다','합리적으로 쓰는 편']],
- ['계획 성향','데이트 계획은?',['미리 정한다','그날 느낌대로']],
- ['계획 성향','약속 시간은?',['여유 있게 도착','딱 맞춰 도착']],
- ['계획 성향','갑작스러운 제안은?',['재미있으면 바로 간다','일정부터 확인한다']]
+ ['애정표현','호감이 생기면 나는?',['먼저 표현한다','천천히 확신을 기다린다']],['애정표현','기념일에는?',['작게라도 꼭 챙긴다','평소가 더 중요하다']],['애정표현','좋아한다는 말은?',['자주 하는 편','행동으로 보여주는 편']],['연락','연인과 연락은?',['틈날 때마다 자주','각자 리듬을 존중']],['연락','답장이 늦으면?',['조금 신경 쓰인다','바쁘겠거니 한다']],['연락','하루를 마치며?',['짧게라도 통화하고 싶다','메시지만으로도 충분하다']],['관계 거리감','주말 일정은?',['함께 보내고 싶다','각자 시간도 중요하다']],['관계 거리감','친구 모임에 연인을?',['자연스럽게 함께','각자 인간관계 유지']],['관계 거리감','취미가 다르면?',['함께 해보려 한다','각자 즐겨도 좋다']],['갈등 해결','서운한 일이 생기면?',['바로 이야기한다','정리할 시간이 필요하다']],['갈등 해결','다툰 뒤 먼저 연락은?',['먼저 풀려고 한다','감정이 가라앉길 기다린다']],['갈등 해결','의견이 다를 때?',['끝까지 대화한다','일단 서로 인정한다']],['데이트 스타일','쉬는 날 데이트는?',['새로운 곳을 찾아간다','익숙한 곳이 편하다']],['데이트 스타일','여행은?',['여기저기 많이 본다','한곳에서 여유롭게']],['데이트 스타일','데이트 비용은?',['경험에 아끼지 않는다','합리적으로 쓰는 편']],['계획 성향','데이트 계획은?',['미리 정한다','그날 느낌대로']],['계획 성향','약속 시간은?',['여유 있게 도착','딱 맞춰 도착']],['계획 성향','갑작스러운 제안은?',['재미있으면 바로 간다','일정부터 확인한다']]
 ];
-const ROUNDS=[
- {label:'취향',q:'주말 데이트라면?',a:['🏠 집에서 영화','🌇 새로운 곳 가보기'],other:1},
- {label:'연애 스타일',q:'연락이 뜸해진 연인에게 나는?',a:['💬 직접 물어본다','🌿 조금 기다린다'],other:0},
- {label:'가치관',q:'연애에서 더 중요한 것은?',a:['✨ 설렘','🫶 안정감'],other:1}
-];
-const AVATAR_FIELDS={
- height:['상관없음','아담한 편','평균','큰 편'],
- body:['슬림','보통','탄탄','볼륨감'],
- face:['다정한 인상','도회적인 인상','웃는 인상','차분한 인상'],
- hair:['짧은 머리','중간 길이','긴 머리','웨이브'],
- fashion:['캐주얼','미니멀','스트릿','포멀'],
- mood:['편안함','밝음','차분함','개성 있음']
-};
-const defaults={
- screen:'welcome',
- ideal:{gender:'여성',height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함',priority:['face','mood']},
- self:{gender:'여성',height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함'},
- personality:{answers:[],scores:{'애정표현':50,'연락':50,'관계 거리감':50,'갈등 해결':50,'데이트 스타일':50,'계획 성향':50},archetype:'다정한 자유주의자'},
- signal:'',unlocked:[],round:0,roundAnswers:[],tickets:4,lastCoords:null,
- privacyContext:false,highIdentificationProtection:true,lastDecision:''
-};
-function deepMerge(base,saved){
- if(Array.isArray(base))return Array.isArray(saved)?saved:base.slice();
- if(base&&typeof base==='object'){const out={...base};if(saved&&typeof saved==='object')for(const k of Object.keys(saved))out[k]=k in base?deepMerge(base[k],saved[k]):saved[k];return out}
- return saved===undefined?base:saved;
-}
+const ROUNDS=[{label:'취향',q:'주말 데이트라면?',a:['🏠 집에서 영화','🌇 새로운 곳 가보기'],other:1},{label:'연애 스타일',q:'연락이 뜸해진 연인에게 나는?',a:['💬 직접 물어본다','🌿 조금 기다린다'],other:0},{label:'가치관',q:'연애에서 더 중요한 것은?',a:['✨ 설렘','🫶 안정감'],other:1}];
+const AVATAR_FIELDS={height:['상관없음','아담한 편','평균','큰 편'],body:['상관없음','슬림','보통','탄탄','볼륨감'],face:['상관없음','다정한 인상','도회적인 인상','웃는 인상','차분한 인상'],hair:['상관없음','짧은 머리','중간 길이','긴 머리','웨이브'],fashion:['상관없음','캐주얼','미니멀','스트릿','포멀'],mood:['상관없음','편안함','밝음','차분함','개성 있음']};
+const defaults={screen:'welcome',ideal:{gender:'여성',height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함',priority:['face','mood']},self:{gender:'여성',height:'평균',body:'보통',face:'다정한 인상',hair:'중간 길이',fashion:'캐주얼',mood:'편안함'},personality:{answers:[],scores:{'애정표현':50,'연락':50,'관계 거리감':50,'갈등 해결':50,'데이트 스타일':50,'계획 성향':50},archetype:'다정한 자유주의자'},signal:'',unlocked:[],round:0,roundAnswers:[],tickets:4,lastCoords:null,privacyContext:false,highIdentificationProtection:true,lastDecision:''};
+function deepMerge(base,saved){if(Array.isArray(base))return Array.isArray(saved)?saved:base.slice();if(base&&typeof base==='object'){const out={...base};if(saved&&typeof saved==='object')for(const k of Object.keys(saved))out[k]=k in base?deepMerge(base[k],saved[k]):saved[k];return out}return saved===undefined?base:saved}
 function load(){try{return deepMerge(defaults,JSON.parse(localStorage.getItem('idealRadarMvp')||'{}'))}catch{return deepMerge(defaults,{})}}
 function save(){localStorage.setItem('idealRadarMvp',JSON.stringify(state))}
 let state=load();
@@ -57,44 +18,17 @@ function shell(content,step=''){app.innerHTML=`<section class="phone"><header cl
 function avatar(model){const female=model.gender==='여성';const hair=model.hair||'';const face=female?'👩':'🧑';const hairMark=hair.includes('웨이브')?'〰':hair.includes('긴')?'⌇':hair.includes('짧')?'˙':'•';return `<div class="avatar-art"><span class="hair-mark">${hairMark}</span><span>${face}</span><small>${model.fashion||''}</small></div>`}
 function demoPartnerSelf(){return {gender:state.ideal.gender,height:state.ideal.height,body:state.ideal.body,face:state.ideal.face,hair:state.ideal.hair,fashion:state.ideal.fashion,mood:state.ideal.mood}}
 function fieldLabel(k){return {height:'키',body:'체형',face:'얼굴/인상',hair:'헤어',fashion:'패션',mood:'분위기'}[k]}
-function render(){
- const s=state.screen;
- if(s==='welcome')return welcome();
- if(s==='ideal')return avatarEditor('ideal');
- if(s==='personality')return personalityScreen();
- if(s==='personality-result')return personalityResult();
- if(s==='self')return avatarEditor('self');
- if(s==='ready')return ready();
- if(s==='radar')return radar();
- if(s==='privacy')return privacyChoice();
- if(s==='signal')return signal();
- if(s==='know')return know();
- if(s==='mutual')return mutual();
- if(s==='round')return round();
- if(s==='decision')return decision();
- if(s==='decision-wait')return decisionWait();
- if(s==='decision-no')return decisionNo();
- if(s==='connected')return connected();
-}
+function appearanceMatch(ideal,self){if(ideal.gender&&self.gender&&ideal.gender!==self.gender)return {eligible:false,score:0,reason:'gender'};const fields=['height','body','face','hair','fashion','mood'];let earned=0,total=0,ignored=0;for(const field of fields){if(ideal[field]==='상관없음'){ignored++;continue}const weight=ideal.priority?.includes(field)?2:1;total+=weight;if(ideal[field]===self[field])earned+=weight}const score=total?Math.round(earned/total*100):100;return {eligible:score>=RADAR_CONFIG.appearanceMatchThreshold,score,ignored,threshold:RADAR_CONFIG.appearanceMatchThreshold}}
+function render(){const s=state.screen;if(s==='welcome')return welcome();if(s==='ideal')return avatarEditor('ideal');if(s==='personality')return personalityScreen();if(s==='personality-result')return personalityResult();if(s==='self')return avatarEditor('self');if(s==='ready')return ready();if(s==='radar')return radar();if(s==='privacy')return privacyChoice();if(s==='signal')return signal();if(s==='know')return know();if(s==='mutual')return mutual();if(s==='round')return round();if(s==='decision')return decision();if(s==='decision-wait')return decisionWait();if(s==='decision-no')return decisionNo();if(s==='connected')return connected()}
 function welcome(){return shell(`<div class="eyebrow">MAKE → RADAR → SIGNAL → KNOW → CONNECT</div><h1>외모는 우리가 찾아드릴게요.<br>마음은 직접 알아보세요.</h1><p>이상형을 만들어두고 평소처럼 지내세요. 가까운 곳에 조건이 맞는 사람이 나타나면 레이더가 먼저 알려드려요.</p><div class="hero-orbit"><div class="orbit"></div><div class="sweep"></div><span class="blip b1"></span><span class="blip b2"></span><div class="heart">💗</div></div><div class="spacer"></div>${btn('내 이상형 만들기','start')}<div class="footer-note">사람 목록 없이 · 검색 없이 · 현실에서 발견</div>`)}
-function avatarEditor(kind){
- const ideal=kind==='ideal',model=ideal?state.ideal:state.self;
- const rows=Object.keys(AVATAR_FIELDS).map(k=>`<div class="builder-row"><div class="builder-title"><b>${fieldLabel(k)}</b>${ideal&&state.ideal.priority.includes(k)?'<span>중요</span>':''}</div><div class="chips">${AVATAR_FIELDS[k].map(v=>`<button class="chip ${model[k]===v?'selected':''}" data-model="${kind}" data-field="${k}" data-value="${v}">${v}</button>`).join('')}</div>${ideal?`<button class="weight ${state.ideal.priority.includes(k)?'on':''}" data-priority="${k}">★ 중요하게 보기</button>`:''}</div>`).join('');
- return shell(`<div class="eyebrow">MAKE · ${ideal?'IDEAL':'SELF'}</div><h1>${ideal?'내 이상형을 만드세요':'나를 만들어볼게요'}</h1><p>${ideal?'캐릭터를 만들듯 내가 끌리는 모습을 골라보세요.':'상대의 이상형과 비교될 나의 모습을 직접 만들어요.'}</p><div class="avatar-stage">${avatar(model)}<div><b>${model.gender}</b><span>${model.face} · ${model.mood}</span></div></div><div class="builder-row"><div class="builder-title"><b>성별</b></div><div class="chips"><button class="chip ${model.gender==='여성'?'selected':''}" data-model="${kind}" data-field="gender" data-value="여성">여성</button><button class="chip ${model.gender==='남성'?'selected':''}" data-model="${kind}" data-field="gender" data-value="남성">남성</button></div></div>${rows}<div class="spacer"></div>${btn(ideal?'성격 진단하기':'준비 완료','avatar-next')}${btn('이전','back','ghost')}`,ideal?'1 / 3':'3 / 3')
-}
-function personalityScreen(){
- const i=state.personality.answers.length;if(i>=QUESTIONS.length)return go('personality-result');const [axis,q,a]=QUESTIONS[i];
- return shell(`<div class="eyebrow">MAKE · PERSONALITY</div><div class="qnum">${i+1} / ${QUESTIONS.length} · ${axis}</div><div class="progress"><span style="width:${(i/QUESTIONS.length)*100}%"></span></div><h1>${q}</h1><p>더 나다운 쪽을 골라주세요. 정답은 없어요.</p><div class="options"><button class="option" data-quiz="0"><span class="icon">A</span><span>${a[0]}</span></button><button class="option" data-quiz="1"><span class="icon">B</span><span>${a[1]}</span></button></div><div class="spacer"></div>${btn('이전','quiz-back','ghost')}`,'2 / 3')
-}
-function calculatePersonality(){
- const scores={},counts={};AXES.forEach(x=>{scores[x]=0;counts[x]=0});state.personality.answers.forEach((ans,i)=>{const axis=QUESTIONS[i][0];scores[axis]+=ans===0?75:25;counts[axis]++});AXES.forEach(x=>scores[x]=Math.round(scores[x]/Math.max(1,counts[x])));
- const avg=Object.values(scores).reduce((a,b)=>a+b,0)/AXES.length;let archetype='다정한 자유주의자';if(scores['계획 성향']>60&&scores['애정표현']>60)archetype='섬세한 로맨티스트';else if(scores['데이트 스타일']>60&&scores['관계 거리감']<50)archetype='호기심 많은 탐험가';else if(avg<45)archetype='차분한 현실주의자';state.personality.scores=scores;state.personality.archetype=archetype;save();
-}
+function avatarEditor(kind){const ideal=kind==='ideal',model=ideal?state.ideal:state.self;const rows=Object.keys(AVATAR_FIELDS).map(k=>`<div class="builder-row"><div class="builder-title"><b>${fieldLabel(k)}</b>${ideal&&state.ideal.priority.includes(k)?'<span>중요</span>':''}</div><div class="chips">${AVATAR_FIELDS[k].map(v=>`<button class="chip ${model[k]===v?'selected':''}" data-model="${kind}" data-field="${k}" data-value="${v}">${v}</button>`).join('')}</div>${ideal?`<button class="weight ${state.ideal.priority.includes(k)?'on':''}" data-priority="${k}">★ 중요하게 보기</button>`:''}</div>`).join('');return shell(`<div class="eyebrow">MAKE · ${ideal?'IDEAL':'SELF'}</div><h1>${ideal?'내 이상형을 만드세요':'나를 만들어볼게요'}</h1><p>${ideal?'캐릭터를 만들듯 내가 끌리는 모습을 골라보세요.':'상대의 이상형과 비교될 나의 모습을 직접 만들어요.'}</p><div class="avatar-stage">${avatar(model)}<div><b>${model.gender}</b><span>${model.face} · ${model.mood}</span></div></div><div class="builder-row"><div class="builder-title"><b>성별</b></div><div class="chips"><button class="chip ${model.gender==='여성'?'selected':''}" data-model="${kind}" data-field="gender" data-value="여성">여성</button><button class="chip ${model.gender==='남성'?'selected':''}" data-model="${kind}" data-field="gender" data-value="남성">남성</button></div></div>${rows}<div class="spacer"></div>${btn(ideal?'성격 진단하기':'준비 완료','avatar-next')}${btn('이전','back','ghost')}`,ideal?'1 / 3':'3 / 3')}
+function personalityScreen(){const i=state.personality.answers.length;if(i>=QUESTIONS.length)return go('personality-result');const [axis,q,a]=QUESTIONS[i];return shell(`<div class="eyebrow">MAKE · PERSONALITY</div><div class="qnum">${i+1} / ${QUESTIONS.length} · ${axis}</div><div class="progress"><span style="width:${(i/QUESTIONS.length)*100}%"></span></div><h1>${q}</h1><p>더 나다운 쪽을 골라주세요. 정답은 없어요.</p><div class="options"><button class="option" data-quiz="0"><span class="icon">A</span><span>${a[0]}</span></button><button class="option" data-quiz="1"><span class="icon">B</span><span>${a[1]}</span></button></div><div class="spacer"></div>${btn('이전','quiz-back','ghost')}`,'2 / 3')}
+function calculatePersonality(){const scores={},counts={};AXES.forEach(x=>{scores[x]=0;counts[x]=0});state.personality.answers.forEach((ans,i)=>{const axis=QUESTIONS[i][0];scores[axis]+=ans===0?75:25;counts[axis]++});AXES.forEach(x=>scores[x]=Math.round(scores[x]/Math.max(1,counts[x])));const avg=Object.values(scores).reduce((a,b)=>a+b,0)/AXES.length;let archetype='다정한 자유주의자';if(scores['계획 성향']>60&&scores['애정표현']>60)archetype='섬세한 로맨티스트';else if(scores['데이트 스타일']>60&&scores['관계 거리감']<50)archetype='호기심 많은 탐험가';else if(avg<45)archetype='차분한 현실주의자';state.personality.scores=scores;state.personality.archetype=archetype;save()}
 function personalityResult(){calculatePersonality();return shell(`<div class="eyebrow">YOUR CHARACTER</div><h1>${state.personality.archetype}</h1><p>당신의 관계 성향을 하나의 캐릭터로 정리했어요.</p><div class="summary"><div class="personality-avatar">💙</div>${AXES.map(x=>`<div class="axis"><span>${x}</span><div><i style="width:${state.personality.scores[x]}%"></i></div><b>${state.personality.scores[x]}</b></div>`).join('')}</div><div class="spacer"></div>${btn('내 아바타 만들기','to-self')}${btn('다시 진단하기','quiz-reset','ghost')}`,'2 / 3')}
-function ready(){return shell(`<div class="eyebrow">READY</div><h1>준비가 끝났어요.<br>이제 평소처럼 지내세요.</h1><div class="summary"><div class="duo"><div>${avatar(state.ideal)}<b>IDEAL</b></div><em>↔</em><div>${avatar(state.self)}<b>SELF</b></div></div></div><p>레이더는 외형 조건이 맞는 순간만 알려줘요. 그 사람이 어떤 사람인지는 직접 알아가게 됩니다.</p><div class="spacer"></div>${btn('RADAR 켜기','radar')}`)}
-function radar(){return shell(`<div class="eyebrow">RADAR · ON</div><h2>평소처럼 지내세요.<br>발견은 레이더가 할게요.</h2><div class="radar-card"><div class="radar-status">● LIVE · ${RADAR_CONFIG.radiusMeters}M</div><div class="radar-mini"><div class="orbit"></div><div class="sweep"></div><div class="heart">💗</div></div><p>사람이나 위치는 보여주지 않아요.</p></div><div class="notice"><b>같은 만남은 한 번만</b><br>같은 공간에서 같은 사람 때문에 신호가 반복되지 않아요. 새로운 공간에서 다시 만나면 다시 발견될 수 있어요.</div><details class="test-panel"><summary>MVP 테스트 신호</summary><div class="test-grid" style="margin-top:10px"><button data-signal="FIND">💓 FIND</button><button data-signal="FOUND">✨ FOUND</button><button data-signal="MUTUAL">💞 MUTUAL</button></div><button class="secondary" style="margin-top:10px" data-action="privacy-demo">👥 특정 가능 상황 테스트</button></details><div class="spacer"></div>${btn('위치 권한 확인','location','secondary')}${btn('처음부터 다시','reset','ghost')}`)}
+function ready(){return shell(`<div class="eyebrow">READY</div><h1>준비가 끝났어요.<br>이제 평소처럼 지내세요.</h1><div class="summary"><div class="duo"><div>${avatar(state.ideal)}<b>IDEAL</b></div><em>↔</em><div>${avatar(state.self)}<b>SELF</b></div></div></div><p>레이더는 모든 조건이 똑같은 사람만 찾지 않아요. 중요하게 본 특징에는 더 큰 비중을 두고, ‘상관없음’으로 둔 항목은 점수에서 제외해 충분히 가까운 사람을 발견합니다.</p><div class="spacer"></div>${btn('RADAR 켜기','radar')}`)}
+function radar(){return shell(`<div class="eyebrow">RADAR · ON</div><h2>평소처럼 지내세요.<br>발견은 레이더가 할게요.</h2><div class="radar-card"><div class="radar-status">● LIVE · ${RADAR_CONFIG.radiusMeters}M</div><div class="radar-mini"><div class="orbit"></div><div class="sweep"></div><div class="heart">💗</div></div><p>사람이나 위치는 보여주지 않아요.</p></div><div class="notice"><b>완벽히 똑같지 않아도 발견해요</b><br>내가 중요하게 본 특징을 중심으로 충분히 가까운 사람에게 신호가 생겨요.</div><details class="test-panel"><summary>MVP 테스트 신호</summary><div class="test-grid" style="margin-top:10px"><button data-signal="FIND">💓 FIND</button><button data-signal="FOUND">✨ FOUND</button><button data-signal="MUTUAL">💞 MUTUAL</button></div><button class="secondary" style="margin-top:10px" data-action="privacy-demo">👥 특정 가능 상황 테스트</button></details><div class="spacer"></div>${btn('위치 권한 확인','location','secondary')}${btn('처음부터 다시','reset','ghost')}`)}
 function privacyChoice(){return shell(`<div class="eyebrow">PRIVACY</div><h1>지금은 서로를<br>특정하기 쉬운 상황이에요.</h1><p>주변 조건상 사실상 서로를 짐작하기 쉬운 순간에는 신호를 주고받을지 선택할 수 있어요.</p><div class="summary"><b>이번에는 서로 숨기기</b><p>내가 상대의 조건에 맞아도 전달되지 않고, 상대가 내 조건에 맞아도 나에게 알려주지 않아요.</p></div><div class="spacer"></div>${btn('이번에는 서로 숨기기','privacy-hide','secondary')}${btn('신호 주고받기','privacy-allow')}${btn('돌아가기','radar','ghost')}`)}
-function signal(){const type=state.signal;const data={FIND:['💓','내 이상형이 주변에 있어요','내가 설정한 이상형에 가까운 사람이 근처에 있어요.'],FOUND:['✨','누군가가 찾던 모습이 당신이에요','당신의 모습이 누군가가 설정해둔 이상형 조건에 들어왔어요.'],MUTUAL:['💞','서로가 서로의 이상형이에요','두 사람의 외형 조건이 서로 맞았어요.']}[type];return shell(`<div class="signal"><div class="signal-icon">${data[0]}</div><div class="eyebrow">${type}</div><h1>${data[1]}</h1><p>${data[2]}</p>${type==='FOUND'?'<div class="notice">상대가 당신에게 좋아요를 눌렀다는 뜻은 아니에요.</div>':''}<div class="notice">사진 · 이름 · 정확한 거리 · 위치 · 주변 인원은 아직 공개하지 않아요.</div></div><div class="spacer"></div>${type==='FIND'?btn('어떤 사람인지 알아보기','know'):''}${type==='MUTUAL'?btn('서로 알아가기','mutual'):''}${btn('레이더로 돌아가기','radar','ghost')}`)}
+function signal(){const type=state.signal;const data={FIND:['💓','내 이상형이 주변에 있어요','내가 설정한 이상형에 가까운 사람이 근처에 있어요.'],FOUND:['✨','누군가가 찾던 모습이 당신이에요','당신의 모습이 누군가가 설정해둔 이상형 조건에 들어왔어요.'],MUTUAL:['💞','서로가 서로의 이상형이에요','두 사람의 외형 조건이 서로 충분히 가까워요.']}[type];return shell(`<div class="signal"><div class="signal-icon">${data[0]}</div><div class="eyebrow">${type}</div><h1>${data[1]}</h1><p>${data[2]}</p>${type==='FOUND'?'<div class="notice">상대가 당신에게 좋아요를 눌렀다는 뜻은 아니에요.</div>':''}<div class="notice">사진 · 이름 · 정확한 거리 · 위치 · 주변 인원은 아직 공개하지 않아요.</div></div><div class="spacer"></div>${type==='FIND'?btn('어떤 사람인지 알아보기','know'):''}${type==='MUTUAL'?btn('서로 알아가기','mutual'):''}${btn('레이더로 돌아가기','radar','ghost')}`)}
 function know(){const items=[['❤️','연애 스타일','마음을 표현할 때 솔직한 편이에요'],['💬','연락 스타일','짧게라도 자주 이어가는 편이에요'],['🫶','관계 성향','함께와 각자의 시간을 균형 있게 봐요'],['🔥','갈등 해결','감정을 정리한 뒤 대화하려 해요'],['🎡','데이트 취향','새로운 장소를 발견하는 걸 좋아해요'],['🌙','생활 패턴','늦은 저녁에 여유를 느껴요']];return shell(`<div class="eyebrow">KNOW</div><h1>외모 다음은,<br>마음을 알아볼 차례예요.</h1><p>궁금한 두 가지를 먼저 열어볼 수 있어요.</p><div class="cards">${items.map((x,i)=>`<button class="insight ${state.unlocked.length>=2&&!state.unlocked.includes(i)?'locked':''}" data-insight="${i}"><span class="emoji">${x[0]}</span><b>${x[1]}</b><span>${state.unlocked.includes(i)?x[2]:state.unlocked.length>=2?'🔒 아직 잠겨 있어요':'탭해서 열기'}</span></button>`).join('')}</div><div class="spacer"></div>${btn('MUTUAL 상황 체험','force-mutual','secondary')}${btn('레이더로 돌아가기','radar','ghost')}`)}
 function mutual(){const partner=demoPartnerSelf();return shell(`<div class="signal"><div class="signal-icon">💞</div><div class="eyebrow">MUTUAL</div><h1>서로가 서로의<br>이상형이에요.</h1><p>사진 대신 상대가 직접 만든 아바타와 최소 정보부터 보여드릴게요.</p></div><div class="reveal mini-reveal">${avatar(partner)}<p><strong>20대 중반</strong><br>💙 다정한 자유주의자</p></div><div class="notice">실제 사진과 닉네임은 아직 열리지 않아요.</div><div class="spacer"></div>${btn('3 ROUND 시작','start-round')}${btn('지금은 아니에요','radar','ghost')}`)}
 function round(){const i=state.round,r=ROUNDS[i],mine=state.roundAnswers[i];return shell(`<div class="round-label">ROUND ${i+1} · ${r.label}</div><div class="progress"><span style="width:${((i+1)/3)*100}%"></span></div><h1>${r.q}</h1><p>둘 다 답한 뒤 서로의 선택이 공개돼요.</p><div class="round-card">${r.a.map((x,n)=>`<button class="choice ${mine===n?'selected':''}" data-answer="${n}">${x}</button>`).join('')}${mine!==undefined?`<div class="result-bar"><span>나 · ${mine+1}번</span><span class="${mine===r.other?'same':''}">상대 · ${r.other+1}번</span></div><div class="chat-window"><b>대화 OPEN · 2:30</b><p>${mine===r.other?'같은 답을 골랐네요. 왜 이쪽이 더 좋아요?':'답이 달랐네요. 서로 이유를 물어보세요.'}</p></div>`:''}</div><div class="spacer"></div>${btn(i===2?'최종 선택으로':'다음 ROUND','round-next','primary',mine===undefined)}`)}
@@ -102,45 +36,8 @@ function decision(){return shell(`<div class="eyebrow">FINAL CHOICE</div><h1>더
 function decisionWait(){return shell(`<div class="signal"><div class="signal-icon">🎟</div><div class="eyebrow">WAITING</div><h1>선택을 보냈어요.</h1><p>티켓 2개를 걸었어요. 상대의 선택에 따라 결과가 정해집니다.</p></div><div class="summary"><b>MVP 결과 체험</b><p>실서비스에서는 상대 선택이 도착할 때까지 이 상태로 기다려요.</p></div><div class="spacer"></div>${btn('상대도 더 알아가고 싶어요','both-yes')}${btn('상대는 여기까지','other-no','secondary')}`)}
 function decisionNo(){return shell(`<div class="signal"><div class="signal-icon">🌙</div><div class="eyebrow">RESULT</div><h1>이번 인연은<br>여기까지예요.</h1><p>상대는 연결을 선택하지 않았어요.</p></div><div class="summary"><b>🎟 1개 반환</b><p>2개를 걸었지만 1개가 돌아와 최종적으로 1개만 사용했어요.</p></div><div class="spacer"></div>${btn('레이더로 돌아가기','radar')}`)}
 function connected(){return shell(`<div class="signal"><div class="signal-icon">🎉</div><div class="eyebrow">CONNECT</div><h1>둘 다 같은 선택을 했어요.</h1><p>이제 처음으로 실제 프로필과 자유로운 대화가 열립니다.</p><div class="real-profile"><div class="photo-placeholder">PHOTO</div><div><h2>레이더 메이트</h2><p>26세 · 서울<br>“좋은 대화와 느긋한 산책을 좋아해요.”</p></div></div></div><div class="spacer"></div>${btn('자유 채팅 시작','chat')}${btn('레이더로 돌아가기','radar','ghost')}`)}
-function bind(){
- document.querySelectorAll('[data-action]').forEach(el=>el.onclick=()=>action(el.dataset.action));
- document.querySelectorAll('[data-model]').forEach(el=>el.onclick=()=>{const model=el.dataset.model,field=el.dataset.field;state[model][field]=el.dataset.value;save();render()});
- document.querySelectorAll('[data-priority]').forEach(el=>el.onclick=()=>{const k=el.dataset.priority,p=state.ideal.priority;if(p.includes(k))state.ideal.priority=p.filter(x=>x!==k);else if(p.length<2)state.ideal.priority=[...p,k];else alert('중요 특성은 최대 2개까지 선택할 수 있어요.');save();render()});
- document.querySelectorAll('[data-quiz]').forEach(el=>el.onclick=()=>{state.personality.answers.push(+el.dataset.quiz);save();render()});
- document.querySelectorAll('[data-signal]').forEach(el=>el.onclick=()=>triggerDemoSignal(el.dataset.signal,'demo-partner-001'));
- document.querySelectorAll('[data-insight]').forEach(el=>el.onclick=()=>{const i=+el.dataset.insight;if(state.unlocked.includes(i))return;if(state.unlocked.length>=2)return alert('지금은 두 가지까지만 먼저 볼 수 있어요.');state.unlocked.push(i);save();render()});
- document.querySelectorAll('[data-answer]').forEach(el=>el.onclick=()=>{state.roundAnswers[state.round]=+el.dataset.answer;save();render()});
-}
-function action(a){
- if(a==='start')return go('ideal');
- if(a==='avatar-next')return go(state.screen==='ideal'?'personality':'ready');
- if(a==='to-self')return go('self');
- if(a==='quiz-back'){if(state.personality.answers.length){state.personality.answers.pop();save();render()}else go('ideal');return}
- if(a==='quiz-reset'){state.personality.answers=[];save();return go('personality')}
- if(a==='radar')return go('radar');
- if(a==='know')return go('know');
- if(a==='mutual'||a==='force-mutual')return go('mutual',{signal:'MUTUAL'});
- if(a==='start-round')return go('round',{round:0,roundAnswers:[]});
- if(a==='privacy-demo')return go('privacy',{privacyContext:true});
- if(a==='privacy-hide'){state.highIdentificationProtection=true;state.privacyContext=true;save();alert('이번 상황에서는 양쪽 모두 신호를 주고받지 않아요.');return go('radar')}
- if(a==='privacy-allow'){state.highIdentificationProtection=false;state.privacyContext=true;save();alert('이번 상황에서는 신호를 주고받을 수 있어요.');return go('radar')}
- if(a==='round-next'){if(state.round<2)return go('round',{round:state.round+1});return go('decision')}
- if(a==='choose-yes')return go('decision-wait',{lastDecision:'YES'});
- if(a==='both-yes')return go('connected',{tickets:Math.max(0,state.tickets-2),lastDecision:'BOTH_YES'});
- if(a==='other-no')return go('decision-no',{tickets:Math.max(0,state.tickets-1),lastDecision:'OTHER_NO'});
- if(a==='end'){if(confirm('여기까지 할까요?'))return go('radar',{lastDecision:'NO'})}
- if(a==='chat')return alert('MVP에서는 CONNECT까지 체험할 수 있어요.');
- if(a==='location'){if(!navigator.geolocation)return alert('이 브라우저는 위치 기능을 지원하지 않아요.');return navigator.geolocation.getCurrentPosition(pos=>{state.lastCoords={lat:pos.coords.latitude,lng:pos.coords.longitude};save();alert(`위치 권한 확인 완료 · ${RADAR_CONFIG.radiusMeters}m 기준으로 레이더를 테스트합니다.`)},()=>alert('위치 권한이 꺼져 있어요. MVP 테스트 신호로 흐름을 체험할 수 있어요.'),{enableHighAccuracy:true,timeout:5000})}
- if(a==='reset'){if(confirm('저장된 MVP 데이터를 지우고 처음부터 시작할까요?')){localStorage.removeItem('idealRadarMvp');localStorage.removeItem(RADAR_CONFIG.signalCooldownKey);state=deepMerge(defaults,{});render()}return}
- if(a==='back'){const map={ideal:'welcome',personality:'ideal',self:'personality-result'};return go(map[state.screen]||'welcome')}
-}
+function bind(){document.querySelectorAll('[data-action]').forEach(el=>el.onclick=()=>action(el.dataset.action));document.querySelectorAll('[data-model]').forEach(el=>el.onclick=()=>{const model=el.dataset.model,field=el.dataset.field;state[model][field]=el.dataset.value;if(model==='ideal'&&el.dataset.value==='상관없음')state.ideal.priority=state.ideal.priority.filter(x=>x!==field);save();render()});document.querySelectorAll('[data-priority]').forEach(el=>el.onclick=()=>{const k=el.dataset.priority,p=state.ideal.priority;if(state.ideal[k]==='상관없음')return alert('상관없음으로 둔 항목은 중요 조건으로 지정하지 않아요.');if(p.includes(k))state.ideal.priority=p.filter(x=>x!==k);else if(p.length<2)state.ideal.priority=[...p,k];else alert('중요 특성은 최대 2개까지 선택할 수 있어요.');save();render()});document.querySelectorAll('[data-quiz]').forEach(el=>el.onclick=()=>{state.personality.answers.push(+el.dataset.quiz);save();render()});document.querySelectorAll('[data-signal]').forEach(el=>el.onclick=()=>triggerDemoSignal(el.dataset.signal,'demo-partner-001'));document.querySelectorAll('[data-insight]').forEach(el=>el.onclick=()=>{const i=+el.dataset.insight;if(state.unlocked.includes(i))return;if(state.unlocked.length>=2)return alert('지금은 두 가지까지만 먼저 볼 수 있어요.');state.unlocked.push(i);save();render()});document.querySelectorAll('[data-answer]').forEach(el=>el.onclick=()=>{state.roundAnswers[state.round]=+el.dataset.answer;save();render()})}
+function action(a){if(a==='start')return go('ideal');if(a==='avatar-next')return go(state.screen==='ideal'?'personality':'ready');if(a==='to-self')return go('self');if(a==='quiz-back'){if(state.personality.answers.length){state.personality.answers.pop();save();render()}else go('ideal');return}if(a==='quiz-reset'){state.personality.answers=[];save();return go('personality')}if(a==='radar')return go('radar');if(a==='know')return go('know');if(a==='mutual'||a==='force-mutual')return go('mutual',{signal:'MUTUAL'});if(a==='start-round')return go('round',{round:0,roundAnswers:[]});if(a==='privacy-demo')return go('privacy',{privacyContext:true});if(a==='privacy-hide'){state.highIdentificationProtection=true;state.privacyContext=true;save();alert('이번 상황에서는 양쪽 모두 신호를 주고받지 않아요.');return go('radar')}if(a==='privacy-allow'){state.highIdentificationProtection=false;state.privacyContext=true;save();alert('이번 상황에서는 신호를 주고받을 수 있어요.');return go('radar')}if(a==='round-next'){if(state.round<2)return go('round',{round:state.round+1});return go('decision')}if(a==='choose-yes')return go('decision-wait',{lastDecision:'YES'});if(a==='both-yes')return go('connected',{tickets:Math.max(0,state.tickets-2),lastDecision:'BOTH_YES'});if(a==='other-no')return go('decision-no',{tickets:Math.max(0,state.tickets-1),lastDecision:'OTHER_NO'});if(a==='end'){if(confirm('여기까지 할까요?'))return go('radar',{lastDecision:'NO'})}if(a==='chat')return alert('MVP에서는 CONNECT까지 체험할 수 있어요.');if(a==='location'){if(!navigator.geolocation)return alert('이 브라우저는 위치 기능을 지원하지 않아요.');return navigator.geolocation.getCurrentPosition(pos=>{state.lastCoords={lat:pos.coords.latitude,lng:pos.coords.longitude};save();alert(`위치 권한 확인 완료 · ${RADAR_CONFIG.radiusMeters}m 기준으로 레이더를 테스트합니다.`)},()=>alert('위치 권한이 꺼져 있어요. MVP 테스트 신호로 흐름을 체험할 수 있어요.'),{enableHighAccuracy:true,timeout:5000})}if(a==='reset'){if(confirm('저장된 MVP 데이터를 지우고 처음부터 시작할까요?')){localStorage.removeItem('idealRadarMvp');localStorage.removeItem(RADAR_CONFIG.signalCooldownKey);state=deepMerge(defaults,{});render()}return}if(a==='back'){const map={ideal:'welcome',personality:'ideal',self:'personality-result'};return go(map[state.screen]||'welcome')}}
 function distanceMeters(a,b){const R=6371e3,p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180,dp=(b.lat-a.lat)*Math.PI/180,dl=(b.lng-a.lng)*Math.PI/180;const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(1-h))}
-function triggerDemoSignal(type,partnerId){
- if(state.privacyContext&&state.highIdentificationProtection){state.privacyContext=false;save();alert('이번 상황은 서로를 특정하기 쉬워 보호를 선택했기 때문에 양쪽 모두 신호가 전달되지 않았어요.');return}
- let seen={};try{seen=JSON.parse(localStorage.getItem(RADAR_CONFIG.signalCooldownKey)||'{}')}catch{}
- const key=`partner:${partnerId}`;const previous=seen[key];
- if(state.lastCoords&&previous?.coords&&distanceMeters(state.lastCoords,previous.coords)<RADAR_CONFIG.newSpaceMeters){alert('같은 공간에서 이미 이 사람 때문에 신호를 받았어요. 새로운 공간에서 다시 만나면 다시 발생할 수 있어요.');state.privacyContext=false;save();return}
- seen[key]={at:Date.now(),coords:state.lastCoords};localStorage.setItem(RADAR_CONFIG.signalCooldownKey,JSON.stringify(seen));state.privacyContext=false;state.highIdentificationProtection=true;save();go('signal',{signal:type})
-}
-render();
-if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
+function triggerDemoSignal(type,partnerId){if(state.privacyContext&&state.highIdentificationProtection){state.privacyContext=false;save();alert('이번 상황은 서로를 특정하기 쉬워 보호를 선택했기 때문에 양쪽 모두 신호가 전달되지 않았어요.');return}let seen={};try{seen=JSON.parse(localStorage.getItem(RADAR_CONFIG.signalCooldownKey)||'{}')}catch{}const key=`partner:${partnerId}`;const previous=seen[key];if(state.lastCoords&&previous?.coords&&distanceMeters(state.lastCoords,previous.coords)<RADAR_CONFIG.newSpaceMeters){alert('같은 공간에서 이미 이 사람 때문에 신호를 받았어요. 새로운 공간에서 다시 만나면 다시 발생할 수 있어요.');state.privacyContext=false;save();return}seen[key]={at:Date.now(),coords:state.lastCoords};localStorage.setItem(RADAR_CONFIG.signalCooldownKey,JSON.stringify(seen));state.privacyContext=false;state.highIdentificationProtection=true;save();go('signal',{signal:type})}
+render();if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
