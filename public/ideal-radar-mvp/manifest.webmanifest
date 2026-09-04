@@ -1,9 +1,1 @@
-{
-  "name":"이상형 레이더",
-  "short_name":"이상형 레이더",
-  "start_url":"./",
-  "display":"standalone",
-  "background_color":"#fffafc",
-  "theme_color":"#ff4f79",
-  "lang":"ko"
-}
+{"name":"이상형 레이더","short_name":"이상형 레이더","start_url":"./","display":"standalone","background_color":"#fffafc","theme_color":"#ff4f79","lang":"ko","description":"외모는 우리가 찾아드릴게요. 마음은 직접 알아보세요."}
