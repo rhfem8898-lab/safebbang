@@ -1,0 +1,9 @@
+{
+  "name":"이상형 레이더",
+  "short_name":"이상형 레이더",
+  "start_url":"./",
+  "display":"standalone",
+  "background_color":"#fffafc",
+  "theme_color":"#ff4f79",
+  "lang":"ko"
+}
