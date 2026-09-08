@@ -3,46 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#3182f6">
-  <title>안전빵 - 결제 전 후회 막는 AI</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
-  <link rel="apple-touch-icon" sizes="256x256" href="/logo/bread-256.png">
-  <link rel="apple-touch-icon" sizes="128x128" href="/logo/bread-128.png">
-  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#F7F5F2">
+  <title>두근 — 다시 마주하고 싶은 사람</title>
+  <meta name="description" content="현실에서 스친 사람을 다시 찾고, 마음이 가까워진 순간만 알려주는 관계 앱 두근">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="안전빵">
-  <meta property="og:title" content="안전빵 - 결제 전 후회 막는 AI">
-  <meta property="og:description" content="식당·카페·병원·미용실까지. AI가 리뷰 100개 읽고 위험 신호 진단">
-  <meta property="og:image" content="/logo/bread-512.png">
+  <meta name="apple-mobile-web-app-title" content="두근">
+  <meta property="og:title" content="두근 — 다시 마주하고 싶은 사람">
+  <meta property="og:description" content="사람을 찾되 추적하지 않는, 현실관계 앱">
   <meta property="og:type" content="website">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { background: #F7F5F2; }
     body {
-      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #37352f;
-      background: #ffffff;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #201F1D;
       -webkit-font-smoothing: antialiased;
-      letter-spacing: -0.01em;
+      letter-spacing: -0.02em;
       line-height: 1.5;
     }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
     #root { min-height: 100vh; }
-    button { font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-    input, textarea { font-family: inherit; -webkit-appearance: none; }
-    a { color: inherit; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    @keyframes slide-in { from { opacity: 0; transform: translateY(-8px);} to { opacity: 1; transform: translateY(0);}}
+    @keyframes heartbeat {
+      0%, 100% { transform: scale(1); }
+      20% { transform: scale(1.08); }
+      36% { transform: scale(0.98); }
+      52% { transform: scale(1.12); }
+      72% { transform: scale(1); }
+    }
+    @keyframes fadeup {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
   <div id="root"></div>
-
-  <!-- React CDN -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
   <script type="text/babel" data-presets="react" src="/app.js"></script>
 </body>
 </html>
