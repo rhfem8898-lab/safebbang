@@ -18,23 +18,85 @@ main{max-width:760px;margin:auto;padding:0 12px 86px}.card{background:#fff;borde
 </style>
 </head>
 <body>
-<header><h1>함평 1박2일 · 여행 후보 55</h1><p>사진을 보며 유지 / 보류 / 제외. 선택값은 현재 URL에 자동 저장됩니다.</p><div class="stats"><span class="pill" id="sKeep"></span><span class="pill" id="sMaybe"></span><span class="pill" id="sOut"></span><span class="pill" id="sNone"></span></div></header>
+<header><h1>함평 1박2일 · 여행 후보 55</h1><p>장소별 실제 사진을 직접 검색해 표시합니다. 유지 / 보류 / 제외 선택값은 현재 URL에 자동 저장됩니다.</p><div class="stats"><span class="pill" id="sKeep"></span><span class="pill" id="sMaybe"></span><span class="pill" id="sOut"></span><span class="pill" id="sNone"></span></div></header>
 <div class="toolbar"><button onclick="setFilter('all')">전체</button><button onclick="setFilter('keep')">유지</button><button onclick="setFilter('maybe')">보류</button><button onclick="setFilter('out')">제외</button><button onclick="setFilter('none')">미선택</button></div>
 <main id="app"></main>
 <div class="bottom"><div><button class="share" onclick="shareResult()">선택 결과 공유</button><button class="share" style="max-width:110px;background:white;color:#111827;border:1px solid var(--line)" onclick="copyLink()">링크 복사</button></div></div>
 <script>
 const places=[[1,"태안","신두리 해안사구","국내 최대 규모의 해안사구. 사막처럼 펼쳐진 모래언덕과 바다가 핵심."],[2,"태안","청산수목원","팜파스·핑크뮬리·연꽃 정원이 넓게 이어지는 수목원. 소형견 동반 후보."],[3,"부안","채석강","층층이 쌓인 해안 절벽과 해식지형."],[4,"부안","곰소염전","실제 천일염 생산지와 염전 반영 풍경."],[5,"함평","모악산 꽃무릇축제","숲 아래 붉은 꽃무릇 군락. 여행 날짜가 축제 기간과 겹치는 계절 한정 후보."],[6,"영광","백수해안도로","서해 절벽·갯벌·노을을 따라 달리는 대표 해안 드라이브."],[7,"고창","청농원 핑크뮬리","넓은 핑크뮬리 정원과 한옥·대나무숲이 함께 있는 농원."],[8,"고창","학원농장","대규모 메밀·해바라기·백일홍·코스모스 밭. 규모감이 장점."],[9,"서천","신성리 갈대밭","강변을 따라 길게 펼쳐지는 대규모 갈대밭과 평지 산책로."],[10,"서천","장항송림 맥문동","해송 숲 바닥을 보라색 맥문동이 채우는 독특한 숲 풍경."],[11,"군산","고군산군도·선유도","여러 섬이 다리로 이어지는 서해 섬 드라이브와 해변 풍경."],[12,"보령","무창포 신비의 바닷길","물때가 맞으면 바다 한가운데로 길이 드러나는 자연현상."],[13,"태안","꽃지해수욕장","할미·할아비바위 실루엣과 서해 일몰로 유명한 안면도 대표 해변."],[14,"영광","백제불교 최초도래지","법성포 바다와 간다라풍 건축이 결합된 역사 관광지."],[15,"함평","전통 해수찜","달군 돌과 바닷물을 이용하는 함평 전통 찜질 체험."],[16,"함평","돌머리해수욕장","갯벌·백사장·솔숲과 바다 위 탐방로가 있는 숙소 인근 해변."],[17,"함평","주포한옥마을","한옥과 서해 갯벌 풍경이 겹치는 마을. 숙소 함평이야기가 위치한 곳."],[18,"무안","황토갯벌랜드","람사르급 갯벌 풍경과 긴 데크 산책로를 즐기는 생태 후보."],[19,"목포","갓바위","삿갓을 쓴 사람처럼 보이는 천연 바위와 해상 보행교."],[20,"목포","고하도 해상데크","해안절벽과 목포대교를 따라 걷는 긴 바다 산책 데크."],[21,"목포","목포 스카이워크","목포대교와 고하도를 바라보는 바다 위 유리 전망 시설."],[22,"태안","운여해변","소나무 실루엣과 얕은 물의 반영이 유명한 노을 사진 포인트."],[23,"태안","안면암 부상탑","물때에 따라 바다 위 부교와 부상탑 풍경이 달라지는 해상 사찰."],[24,"태안","안면도 자연휴양림·안면송","곧고 높은 안면송이 빽빽하게 이어지는 역사 깊은 소나무 숲."],[25,"태안","파도리 해식동굴","조약돌 해변과 자연 해식동굴 프레임 사진이 특징."],[26,"홍성","남당항 대하축제","9월 제철 대하를 항구에서 즐기는 계절 한정 음식·축제 콘텐츠."],[27,"서산","간월암","밀물 때 작은 섬처럼 보이는 암자. 물때와 노을이 핵심."],[28,"예산","아그로랜드 태신목장","넓은 초원·목장·산책길과 계절 꽃이 어우러진 대형 농장."],[29,"고창","고창 고인돌유적","넓은 들판에 세계유산 고인돌 군집이 펼쳐지는 선사 유적."],[30,"고창","운곡람사르습지","복원된 습지·저수지·데크길을 걷는 생태 산책 후보."],[31,"태안","네이처월드 가을꽃박람회","백일홍·버베나·국화 등 대규모 가을꽃 정원을 운영하는 시즌 행사."],[32,"태안","백사장항·대하랑꽃게랑다리","항구와 대하·꽃게 먹거리, 독특한 보행교를 한 번에 보는 후보."],[33,"당진","삽교호 드론 라이트쇼","토요일 밤 열리는 날짜 한정 드론 공연. 숙소 바비큐와 시간 충돌 여부가 변수."],[34,"서산","해미읍성","넓은 잔디와 성곽을 편하게 걷는 역사 산책지."],[35,"서천","장항스카이워크","해송숲 위에서 바다 방향으로 이어지는 높이 있는 전망 데크."],[36,"서천","한산모시관","한산모시의 전통 제작 문화를 볼 수 있는 서천 고유 문화 후보."],[37,"군산","경암동 철길마을","철길을 따라 레트로 상점과 골목이 이어지는 도심 사진 콘텐츠."],[38,"군산","근대역사문화거리","근대 건축과 항구 도시의 역사 흔적이 밀집한 거리."],[39,"부안","적벽강","붉은 해안 절벽과 바다 지질 풍경이 특징인 변산반도 명소."],[40,"부안","내소사 전나무길","고찰 입구까지 곧은 전나무 숲길이 길게 이어지는 산책 코스."],[41,"고창","선운사 꽃무릇","고찰 숲 아래 붉은 꽃무릇이 번지는 계절 한정 풍경."],[42,"고창","하전갯벌","고창의 광활한 갯벌과 체험 문화를 볼 수 있는 해안 후보."],[43,"고창","해변 승마","서해 해변에서 말을 타는 이색 체험. 예약 및 강아지 대기 조건 확인 필요."],[44,"고창","고창읍성","성곽·소나무·대숲을 함께 걷는 고창 대표 역사 산책지."],[45,"정읍","구절초 지방정원","넓은 구절초 꽃동산. 다만 주요 축제 시기가 10월이라 현재 상태 확인 필요."],[46,"영광","불갑산 상사화축제","붉은 상사화 군락과 축제 프로그램이 여행 날짜에 진행되는 후보."],[47,"영광","법성포 굴비거리","영광 대표 음식인 굴비 덕장·상점·식당이 모인 지역 먹거리 콘텐츠."],[48,"함평","고막천 석교","오래된 돌다리가 하천 위에 남아 있는 짧은 지역 문화유산 후보."],[49,"함평","함평 자연생태공원","넓은 생태정원과 산책 공간을 갖춘 자연형 공원."],[50,"무안","회산백련지","거대한 연꽃 저수지와 데크가 특징. 9월 중순 꽃 상태가 변수."],[51,"목포","목포 해상케이블카","도시·바다·유달산·고하도를 공중에서 한 번에 보는 이동형 전망 콘텐츠."],[52,"목포","목포해상 W-SHOW","바다분수·공연·불꽃이 결합된 9월 19일 밤 날짜 한정 이벤트."],[53,"나주","전남산림자원연구소","긴 메타세쿼이아·숲길을 여유롭게 걷는 나주 산림 산책 후보."],[54,"담양","죽녹원","대규모 대나무숲을 걷는 담양 대표 자연·지역성 콘텐츠."],[55,"담양","메타세쿼이아길","키 큰 메타세쿼이아가 길 양쪽으로 터널처럼 이어지는 산책·사진 명소."]];
 const initialOut=[3,4,14,15];
-let filter='all',state={},imgIndex={};
+let filter='all',state={},imgIndex={},imgUrls={};
 try{if(location.hash.startsWith('#s='))state=JSON.parse(decodeURIComponent(location.hash.slice(3)))}catch{}
 for(const id of initialOut)if(!state[id])state[id]='out';
 function save(){history.replaceState(null,'','#s='+encodeURIComponent(JSON.stringify(state)));stats()}
 function stats(){let k=0,m=0,o=0,n=0;for(const p of places){const v=state[p[0]];if(v==='keep')k++;else if(v==='maybe')m++;else if(v==='out')o++;else n++}sKeep.textContent='유지 '+k;sMaybe.textContent='보류 '+m;sOut.textContent='제외 '+o;sNone.textContent='미선택 '+n}
 function setFilter(f){filter=f;render()}
 function choose(id,v){state[id]=state[id]===v?'':v;save();render()}
-function photoSrc(id){return '/api/trip-image?id='+id+'&n='+(imgIndex[id]||0)}
-function stepImg(id,d){imgIndex[id]=((imgIndex[id]||0)+d+3)%3;const im=document.querySelector('#img-'+id);if(im)im.src=photoSrc(id)+'&t='+Date.now()}
-function render(){app.innerHTML='';for(const p of places){const [id,region,name,desc]=p;const v=state[id]||'';if(filter!=='all'&&(filter==='none'?v!=='':v!==filter))continue;const e=document.createElement('article');e.className='card '+v;e.innerHTML='<div class="photo"><div class="loading">사진 불러오는 중…</div><img id="img-'+id+'" src="'+photoSrc(id)+'" alt="'+name+'" onload="this.previousElementSibling.style.display=\'none\'" onerror="this.style.display=\'none\';this.previousElementSibling.textContent=\'사진을 다시 불러오는 중…\';setTimeout(()=>{this.style.display=\'block\';this.src=photoSrc('+id+')+\'&retry=\'+Date.now()},700)"><div class="nav"><button onclick="stepImg('+id+',-1)">‹</button><button onclick="stepImg('+id+',1)">›</button></div></div><div class="body"><div class="top"><span class="num">'+id+'</span><div><div class="region">'+region+'</div><div class="name">'+name+'</div></div></div>'+(initialOut.includes(id)?'<div class="excluded">현재 제외 확정</div>':'')+'<div class="desc">'+desc+'</div><div class="choices"><button class="keep '+(v==='keep'?'sel':'')+'" onclick="choose('+id+',\'keep\')">♥ 유지</button><button class="maybe '+(v==='maybe'?'sel':'')+'" onclick="choose('+id+',\'maybe\')">◐ 보류</button><button class="out '+(v==='out'?'sel':'')+'" onclick="choose('+id+',\'out\')">× 제외</button></div></div>';app.appendChild(e)}stats()}
+async function fetchImagesFor(id,name,region){
+  if(imgUrls[id]?.length)return imgUrls[id];
+  const queries=[region+' '+name, name+' Korea'];
+  const out=[];
+  for(const q of queries){
+    try{
+      const r=await fetch('https://api.openverse.org/v1/images/?page_size=10&q='+encodeURIComponent(q));
+      if(r.ok){
+        const j=await r.json();
+        for(const x of (j.results||[])){
+          const u=x.thumbnail||x.url;
+          if(u&&!out.includes(u))out.push(u);
+          if(out.length>=3)break;
+        }
+      }
+    }catch{}
+    if(out.length>=3)break;
+    try{
+      const u='https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrlimit=10&gsrsearch='+encodeURIComponent(q)+'&prop=imageinfo&iiprop=url&iiurlwidth=1200&format=json&origin=*';
+      const r=await fetch(u);
+      if(r.ok){
+        const j=await r.json();
+        for(const p of Object.values(j.query?.pages||{})){
+          const ii=p.imageinfo?.[0], src=ii?.thumburl||ii?.url;
+          if(src&&!out.includes(src))out.push(src);
+          if(out.length>=3)break;
+        }
+      }
+    }catch{}
+  }
+  imgUrls[id]=out.slice(0,3);
+  return imgUrls[id];
+}
+async function loadPhoto(id){
+  const p=places.find(x=>x[0]===id); if(!p)return;
+  const box=document.querySelector('#photo-'+id), im=document.querySelector('#img-'+id); if(!box||!im)return;
+  const loading=box.querySelector('.loading');
+  if(box.dataset.loaded==='1')return;
+  box.dataset.loaded='1';
+  const urls=await fetchImagesFor(id,p[2],p[1]);
+  if(!urls.length){loading.textContent='사진을 찾지 못했습니다 · 번호를 알려주면 직접 교체할게요';return}
+  imgIndex[id]=0;
+  let tries=0;
+  const tryShow=()=>{
+    if(tries>=urls.length){loading.textContent='사진 로딩 실패 · 번호를 알려주면 직접 교체할게요';return}
+    const src=urls[imgIndex[id]];
+    im.onload=()=>{loading.style.display='none';im.style.display='block'};
+    im.onerror=()=>{tries++;imgIndex[id]=(imgIndex[id]+1)%urls.length;tryShow()};
+    im.src=src;
+  };
+  tryShow();
+}
+function stepImg(id,d){
+  const urls=imgUrls[id]||[]; if(!urls.length)return;
+  imgIndex[id]=((imgIndex[id]||0)+d+urls.length)%urls.length;
+  const im=document.querySelector('#img-'+id), loading=document.querySelector('#photo-'+id+' .loading');
+  if(!im)return;
+  if(loading)loading.style.display='grid';
+  im.onload=()=>{if(loading)loading.style.display='none';im.style.display='block'};
+  im.src=urls[imgIndex[id]];
+}
+const observer=new IntersectionObserver(entries=>{
+  for(const e of entries)if(e.isIntersecting){loadPhoto(Number(e.target.dataset.id));observer.unobserve(e.target)}
+},{rootMargin:'500px'});
+function render(){app.innerHTML='';for(const p of places){const [id,region,name,desc]=p;const v=state[id]||'';if(filter!=='all'&&(filter==='none'?v!=='':v!==filter))continue;const e=document.createElement('article');e.className='card '+v;e.innerHTML='<div class="photo" id="photo-'+id+'" data-id="'+id+'"><div class="loading">실제 장소 사진 찾는 중…</div><img id="img-'+id+'" alt="'+name+'" style="display:none"><div class="nav"><button onclick="stepImg('+id+',-1)">‹</button><button onclick="stepImg('+id+',1)">›</button></div></div><div class="body"><div class="top"><span class="num">'+id+'</span><div><div class="region">'+region+'</div><div class="name">'+name+'</div></div></div>'+(initialOut.includes(id)?'<div class="excluded">현재 제외 확정</div>':'')+'<div class="desc">'+desc+'</div><div class="choices"><button class="keep '+(v==='keep'?'sel':'')+'" onclick="choose('+id+',\'keep\')">♥ 유지</button><button class="maybe '+(v==='maybe'?'sel':'')+'" onclick="choose('+id+',\'maybe\')">◐ 보류</button><button class="out '+(v==='out'?'sel':'')+'" onclick="choose('+id+',\'out\')">× 제외</button></div></div>';app.appendChild(e);observer.observe(e.querySelector('.photo'))}stats()}
 function summary(){const a=t=>places.filter(p=>state[p[0]]===t).map(p=>p[0]+' '+p[2]);return{keep:a('keep'),maybe:a('maybe'),out:a('out')}}
 async function copyLink(){await navigator.clipboard.writeText(location.href);alert('선택이 포함된 링크를 복사했습니다. 이 링크를 ChatGPT에 보내면 그대로 읽을 수 있어요.')}
 async function shareResult(){const s=summary();const t='여행 후보 선택 결과\n\n유지: '+(s.keep.join(', ')||'없음')+'\n\n보류: '+(s.maybe.join(', ')||'없음')+'\n\n제외: '+(s.out.join(', ')||'없음')+'\n\n선택 링크: '+location.href;if(navigator.share){try{await navigator.share({title:'여행 후보 선택 결과',text:t});return}catch{}}await navigator.clipboard.writeText(t);alert('결과를 복사했습니다. ChatGPT에 붙여넣어 주세요.')}
